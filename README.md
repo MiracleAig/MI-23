@@ -1,2 +1,6 @@
 # MI-23
-The MI-23 is an open-source graphing calculator built around the Raspberry Pi RP2350. Designed as an affordable alternative to the TI-84 Plus CE.
+MI-23 is a DIY graphing calculator powered by the Raspberry Pi RP2350, 
+built as an open-source alternative to the TI-84 Plus CE at a fraction 
+of the cost. Inspired by NumWorks, the MI-23 targets students who need 
+an affordable, exam-approved graphing calculator without sacrificing 
+performance.
