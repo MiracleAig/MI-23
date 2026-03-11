@@ -39,3 +39,29 @@
 
 # debug information files
 *.dwo
+
+# Build output
+build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# CLion IDE files
+.idea/
+cmake-build-*/
+*.iml
+
+# Compiled binaries
+mi23
+*.uf2
+*.elf
+*.bin
+*.hex
+*.map
+
+# OS files
+.DS_Store
+Thumbs.db
