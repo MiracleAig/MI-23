@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" width="520" height="200">
+  <defs>
+    <!-- Dark background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a1a"/>
+      <stop offset="100%" style="stop-color:#0d0d0d"/>
+    </linearGradient>
+
+    <!-- Orange glow for accent elements -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="softglow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Clip for calculator body -->
+    <clipPath id="calcClip">
+      <rect x="18" y="18" width="144" height="164" rx="14"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── CALCULATOR ICON ── -->
+
+  <!-- Outer glow halo -->
+  <rect x="14" y="14" width="152" height="172" rx="17" fill="none"
+        stroke="#FF6B00" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- Calculator body -->
+  <rect x="18" y="18" width="144" height="164" rx="14"
+        fill="url(#bgGrad)" stroke="#FF6B00" stroke-width="2.5"/>
+
+  <!-- Screen bezel -->
+  <rect x="30" y="30" width="120" height="62" rx="6" fill="#111111" stroke="#333" stroke-width="1"/>
+
+  <!-- Screen glow -->
+  <rect x="31" y="31" width="118" height="60" rx="5.5"
+        fill="#0d1a00" opacity="0.9"/>
+
+  <!-- Graph curve on screen — sine wave style -->
+  <g filter="url(#glow)">
+    <!-- Grid lines -->
+    <line x1="90" y1="33" x2="90" y2="89" stroke="#1e3a00" stroke-width="0.8"/>
+    <line x1="32" y1="61" x2="148" y2="61" stroke="#1e3a00" stroke-width="0.8"/>
+
+    <!-- Curve — sine wave, zero-crossing at x=90 (Y axis), symmetric -->
+    <path d="M35,61 C41,61 47,34 62,34 C77,34 83,88 90,88 C97,88 103,34 118,34 C133,34 139,61 145,61"
+          fill="none" stroke="#FF6B00" stroke-width="2.2" stroke-linecap="round" filter="url(#glow)"/>
+
+    <!-- Axes -->
+    <line x1="35" y1="61" x2="145" y2="61" stroke="#FF6B00" stroke-width="1" opacity="0.5"/>
+    <line x1="90" y1="34" x2="90" y2="88" stroke="#FF6B00" stroke-width="1" opacity="0.5"/>
+
+    <!-- Axis arrows -->
+    <polygon points="145,61 141,59 141,63" fill="#FF6B00" opacity="0.5"/>
+    <polygon points="90,34 88,38 92,38" fill="#FF6B00" opacity="0.5"/>
+  </g>
+
+  <!-- Button grid — 4 rows × 4 cols -->
+  <g fill="#222222" stroke="#3a3a3a" stroke-width="0.8">
+    <!-- Row 1 (small function keys, orange accent) -->
+    <rect x="30" y="102" width="24" height="12" rx="3" fill="#FF6B00"/>
+    <rect x="60" y="102" width="24" height="12" rx="3" fill="#FF6B00"/>
+    <rect x="90" y="102" width="24" height="12" rx="3" fill="#FF6B00"/>
+    <rect x="120" y="102" width="30" height="12" rx="3" fill="#FF6B00"/>
+
+    <!-- Row 2 -->
+    <rect x="30" y="120" width="24" height="13" rx="3"/>
+    <rect x="60" y="120" width="24" height="13" rx="3"/>
+    <rect x="90" y="120" width="24" height="13" rx="3"/>
+    <rect x="120" y="120" width="30" height="13" rx="3"/>
+
+    <!-- Row 3 -->
+    <rect x="30" y="139" width="24" height="13" rx="3"/>
+    <rect x="60" y="139" width="24" height="13" rx="3"/>
+    <rect x="90" y="139" width="24" height="13" rx="3"/>
+    <rect x="120" y="139" width="30" height="13" rx="3"/>
+
+    <!-- Row 4 (bottom) — enter key wide orange -->
+    <rect x="30" y="158" width="24" height="13" rx="3"/>
+    <rect x="60" y="158" width="24" height="13" rx="3"/>
+    <rect x="90" y="158" width="24" height="13" rx="3"/>
+    <rect x="120" y="158" width="30" height="13" rx="3" fill="#CC5500"/>
+  </g>
+
+  <!-- Tiny key labels (row 1) -->
+  <g font-family="monospace" font-size="5.5" fill="#0d0d0d" font-weight="bold" text-anchor="middle">
+    <text x="42" y="111">SIN</text>
+    <text x="72" y="111">COS</text>
+    <text x="102" y="111">TAN</text>
+    <text x="135" y="111">GRAPH</text>
+  </g>
+
+  <!-- Tiny key labels (rows 2–4) -->
+  <g font-family="monospace" font-size="6" fill="#aaaaaa" text-anchor="middle">
+    <text x="42" y="130">7</text>  <text x="72" y="130">8</text>
+    <text x="102" y="130">9</text> <text x="135" y="130">÷</text>
+
+    <text x="42" y="149">4</text>  <text x="72" y="149">5</text>
+    <text x="102" y="149">6</text> <text x="135" y="149">×</text>
+
+    <text x="42" y="168">1</text>  <text x="72" y="168">2</text>
+    <text x="102" y="168">3</text>
+  </g>
+  <text x="135" y="168" font-family="monospace" font-size="6"
+        fill="#ffddbb" text-anchor="middle" font-weight="bold">ENT</text>
+
+  <!-- ── WORDMARK ── -->
+
+  <!-- Company name -->
+  <text x="212" y="45"
+        font-family="'Courier New', monospace"
+        font-size="11" letter-spacing="3.5"
+        fill="#FFAA66">MIRACLE'S INSTRUMENTS</text>
+
+  <!-- Thin rule under company name -->
+  <rect x="212" y="51" width="200" height="1" rx="0.5" fill="#FF6B00" opacity="0.28"/>
+
+  <!-- MI-23 main text -->
+  <text x="210" y="118"
+        font-family="'Courier New', 'Lucida Console', monospace"
+        font-size="72" font-weight="900" letter-spacing="-2"
+        fill="#FF6B00" filter="url(#softglow)">MI-23</text>
+
+  <!-- Underline accent bar -->
+  <rect x="210" y="130" width="298" height="4" rx="2" fill="#FF6B00" opacity="0.9"/>
+
+  <!-- Tagline -->
+  <text x="211" y="155"
+        font-family="'Courier New', monospace"
+        font-size="8.5" letter-spacing="4.5"
+        fill="#cccccc">OPEN SOURCE GRAPHING CALCULATOR</text>
+
+  <!-- Small chip label — bottom right corner flavor text -->
+  <text x="508" y="185"
+        font-family="monospace" font-size="8.5"
+        fill="#888888" text-anchor="end" letter-spacing="1">RP2350 · C++</text>
+
+  <!-- Orange corner accent top-right -->
+  <polygon points="490,0 520,0 520,30" fill="#FF6B00" opacity="0.15"/>
+  <polygon points="496,0 520,0 520,24" fill="#FF6B00" opacity="0.2"/>
+</svg>
