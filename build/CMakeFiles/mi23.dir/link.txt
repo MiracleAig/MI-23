@@ -1,0 +1,1 @@
+/usr/lib64/ccache/c++ -Wl,--dependency-file=CMakeFiles/mi23.dir/link.d CMakeFiles/mi23.dir/firmware/main_host.cpp.o CMakeFiles/mi23.dir/firmware/hal/host/display_sdl.cpp.o CMakeFiles/mi23.dir/firmware/hal/host/keypad_host.cpp.o -o mi23  /usr/lib64/libSDL2-2.0.so.0.3200.64
