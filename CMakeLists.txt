@@ -18,6 +18,8 @@ if(PLATFORM STREQUAL "host")
             firmware/hal/host/display_sdl.cpp
             firmware/hal/host/keypad_host.cpp
             firmware/graphics/font.h
+            firmware/core/expression.cpp
+            firmware/core/expression.h
     )
 
     target_include_directories(mi23 PRIVATE

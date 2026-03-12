@@ -1,9 +1,10 @@
 //
-// Created by miracleaigbogun on 3/10/26.
+// Created by Miracle Aigbogun on 3/10/26.
 //
 
 #include "hal/host/display_sdl.h"
 #include "hal/host/keypad_host.h"
+#include "core/expression.h"
 
 #include <cstdio>
 
@@ -14,7 +15,9 @@ int main() {
     KeypadHost keypad;
 
     char inputBuffer[32] = {0};
+    char resultBuffer[32] = {0};
     int inputLen = 0;
+    bool awaitingNewInput = false;
 
     display.init();
     keypad.init();
@@ -35,12 +38,25 @@ int main() {
         Key pressed = keypad.getKey();
         if (pressed != Key::NONE) {
             if (pressed == Key::CLEAR && inputLen > 0) {
-                inputBuffer[--inputLen] = '\0';  // delete last character
+                inputBuffer[--inputLen] = '\0';
+                resultBuffer[0] = '\0';// delete last character
             } else if (pressed == Key::ENTER) {
-                printf("Expression: %s\n", inputBuffer);  // placeholder for now
+               ExprResult result = evaluate(inputBuffer);
+                if (result.ok) {
+                    snprintf(resultBuffer, sizeof(resultBuffer), "%.6g", result.value);
+                    awaitingNewInput = true;
+                } else {
+                    snprintf(resultBuffer, sizeof(resultBuffer), "%s", result.error);
+                }
             } else if (isPrintable(pressed) && inputLen < 31) {
-                inputBuffer[inputLen++] = static_cast<char>(pressed);
-                inputBuffer[inputLen]   = '\0';  // always keep null terminated
+               if (awaitingNewInput) {
+                   inputLen = 0;
+                   inputBuffer[0] = '\0';
+                   resultBuffer[0] = '\0';
+                   awaitingNewInput = false;
+               }
+                inputBuffer[inputLen++] = toChar(pressed);
+                inputBuffer[inputLen] = '\0';
             }
         }
 
@@ -48,10 +64,8 @@ int main() {
         display.clear(DisplaySDL::rgb(30,30,30)); // DARK GRAY
 
         display.drawRect(10, 10, 300, 80, Display::BLACK);
-        display.drawText("Calculator Simulator", 10, 10, Display::WHITE);
-        display.drawText("Press Escape To Quit", 10, 30, Display::GREEN);
-        display.drawText("Hello, world!", 10, 50, Display::RED);
-        display.drawText(inputBuffer, 10, 70, Display::WHITE);
+        display.drawText(inputBuffer, 10, 10, Display::WHITE);
+        display.drawText(resultBuffer, 290, 20, Display::GREEN);
 
         // Draw placeholder buttons 4x4 grid
         for (int row = 0; row < 4; row++) {
