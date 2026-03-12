@@ -103,17 +103,16 @@ void DisplaySDL::present() {
 }
 
 // Checks if anything happened (key press, window close, etc)
-void DisplaySDL::pollEvents() {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT) {
-            m_shouldQuit = true;
-        }
-        if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_ESCAPE) {
-                m_shouldQuit = true;
-            }
-        }
-    }
-
-}
+// void DisplaySDL::pollEvents() {
+//     SDL_Event event;
+//     while (SDL_PollEvent(&event)) {
+//         if (event.type == SDL_QUIT) {
+//             m_shouldQuit = true;
+//         }
+//         if (event.type == SDL_KEYDOWN) {
+//             if (event.key.keysym.sym == SDLK_ESCAPE) {
+//                 m_shouldQuit = true;
+//             }
+//         }
+//     }
+//}

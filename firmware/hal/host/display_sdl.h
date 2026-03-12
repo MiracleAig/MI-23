@@ -18,7 +18,8 @@ public:
     void present() override;
 
     bool shouldQuit() const { return m_shouldQuit; }
-    void pollEvents();
+    void setQuit() {m_shouldQuit = true;}
+    //void pollEvents();
 private:
     void drawChar(char c, int x, int y, uint16_t color, uint16_t bgColor);
 

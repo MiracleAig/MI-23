@@ -15,5 +15,5 @@ public:
     void handleEvent(const SDL_Event &event);
 private:
     Key m_currentKey = Key::NONE;
-
+    bool m_shiftHeld = false;
 };
