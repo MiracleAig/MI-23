@@ -4,6 +4,7 @@
 
 #include "hal/host/display_sdl.h"
 #include "hal/host/keypad_host.h"
+
 #include <cstdio>
 
 int main() {
@@ -36,6 +37,10 @@ int main() {
         display.clear(DisplaySDL::rgb(30,30,30)); // DARK GRAY
 
         display.drawRect(10, 10, 300, 80, Display::rgb(20, 20, 20));
+        display.drawText("Calculator Simulator", 10, 10, Display::WHITE);
+        display.drawText("Press Escape To Quit", 10, 30, Display::GREEN);
+        display.drawText("Hello, world!", 10, 50, Display::RED);
+        display.drawText("123456789.{}[]/+=-", 10, 70, Display::BLUE);
 
         // Draw placeholder buttons 4x4 grid
         for (int row = 0; row < 4; row++) {

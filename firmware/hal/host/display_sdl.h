@@ -20,6 +20,8 @@ public:
     bool shouldQuit() const { return m_shouldQuit; }
     void pollEvents();
 private:
+    void drawChar(char c, int x, int y, uint16_t color, uint16_t bgColor);
+
     SDL_Window* m_window = nullptr;
     SDL_Renderer* m_renderer = nullptr;
     bool m_shouldQuit = false;
