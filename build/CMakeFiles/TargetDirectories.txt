@@ -1,3 +1,0 @@
-/home/miracleaigbogun/calculator/build/CMakeFiles/mi23.dir
-/home/miracleaigbogun/calculator/build/CMakeFiles/edit_cache.dir
-/home/miracleaigbogun/calculator/build/CMakeFiles/rebuild_cache.dir

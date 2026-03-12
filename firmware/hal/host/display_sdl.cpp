@@ -3,6 +3,7 @@
 //
 
 #include "display_sdl.h"
+#include "graphics/font.h"
 #include <cstdio>
 
 DisplaySDL::DisplaySDL() = default;
@@ -46,38 +47,55 @@ void DisplaySDL::init() {
     printf("Display initialized: %dx%d\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
 }
 
-void DisplaySDL::clear(uint16_t color) {
-    uint8_t r = ((color >> 11)  & 0x1F) << 3;
-    uint8_t g = ((color >> 5)   & 0x3F) << 2;
-    uint8_t b = ((color)        & 0x1F) << 3;
+static void setDrawColor(SDL_Renderer* r, uint16_t color) {
+    uint8_t red = ((color >> 11)    & 0x1F) << 3;
+    uint8_t green = ((color >> 5)   & 0x3F) << 2;
+    uint8_t blue = ((color)         & 0x1F) << 3;
 
-    SDL_SetRenderDrawColor(m_renderer, r, g, b, 255);
+    SDL_SetRenderDrawColor(r, red, green, blue, 255);
+}
+
+void DisplaySDL::clear(uint16_t color) {
+    setDrawColor(m_renderer, color);
     SDL_RenderClear(m_renderer);
 }
 
 void DisplaySDL::drawPixel(int x, int y, uint16_t color) {
-    uint8_t r = ((color >> 11)  & 0x1F) << 3;
-    uint8_t g = ((color >> 5)   & 0x3F) << 2;
-    uint8_t b = ((color)        & 0x1F) << 3;
-
-    SDL_SetRenderDrawColor(m_renderer, r, g, b, 255);
+    setDrawColor(m_renderer, color);
     SDL_RenderDrawPoint(m_renderer, x, y);
 }
 
 void DisplaySDL::drawRect(int x, int y, int w, int h, uint16_t color) {
-    uint8_t r = ((color >> 11)  & 0x1F) << 3;
-    uint8_t g = ((color >> 5)   & 0x3F) << 2;
-    uint8_t b = ((color)        & 0x1F) << 3;
-
-    SDL_SetRenderDrawColor(m_renderer, r, g, b, 255);
+    setDrawColor(m_renderer, color);
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderFillRect(m_renderer, &rect);
 }
 
+void DisplaySDL::drawChar(char c, int x, int y, uint16_t color, uint16_t bgColor) {
+    uint8_t ascii = static_cast<uint8_t>(c);
+    const uint8_t* glyph = &FONT_DATA[ascii * FONT_CHAR_WIDTH];
+    for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
+        uint8_t col_byte = glyph[col];
+        for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
+            if ((col_byte >> row) & 1) {
+                drawPixel(x + col, y + row, color);
+            } else {
+                drawPixel(x + col, y + row, bgColor);
+            }
+        }
+    }
+    // Draw the spacing between characters (1px)
+    for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
+        drawPixel(x + FONT_CHAR_WIDTH, y + row, bgColor);
+    }
+}
+
 void DisplaySDL::drawText(const char* text, int x, int y, uint16_t color) {
-    int len = 0;
-    while (text[len]) len++;
-    drawRect(x, y, len * 8, 16, color);
+    int cursor_x = x;
+    for (int i = 0; text[i] != '\0'; i++) {
+        drawChar(text[i], cursor_x, y, color, Display::BLACK);
+        cursor_x += FONT_CHAR_ADVANCE;
+    }
 }
 
 void DisplaySDL::present() {
@@ -85,17 +103,16 @@ void DisplaySDL::present() {
 }
 
 // Checks if anything happened (key press, window close, etc)
-void DisplaySDL::pollEvents() {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT) {
-            m_shouldQuit = true;
-        }
-        if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_ESCAPE) {
-                m_shouldQuit = true;
-            }
-        }
-    }
-
-}
+// void DisplaySDL::pollEvents() {
+//     SDL_Event event;
+//     while (SDL_PollEvent(&event)) {
+//         if (event.type == SDL_QUIT) {
+//             m_shouldQuit = true;
+//         }
+//         if (event.type == SDL_KEYDOWN) {
+//             if (event.key.keysym.sym == SDLK_ESCAPE) {
+//                 m_shouldQuit = true;
+//             }
+//         }
+//     }
+//}
