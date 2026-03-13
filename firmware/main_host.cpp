@@ -6,8 +6,16 @@
 #include "hal/host/keypad_host.h"
 #include "core/expression.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <string>
+#include <vector>
 #include <SDL2/SDL.h>
+
+struct HistoryEntry {
+    std::string input;
+    std::string result;
+};
 
 int main() {
     printf("Calculator Simulator Is Starting...\n");
@@ -20,11 +28,21 @@ int main() {
     int inputLen = 0;
     bool awaitingNewInput = false;
 
+    std::vector<HistoryEntry> history;
+    int historyScroll = 0;
 
     display.init();
     keypad.init();
 
     printf("Calculator Simulator Has Initialized. Press Escape To Quit. \n");
+    
+    const int MARGIN = 5;
+    const int ROW_HEIGHT = 20;
+    const int HISTORY_TOP = 4;
+    const int HISTORY_BOTTOM = 100;
+    const int HISTORY_HEIGHT = HISTORY_BOTTOM - HISTORY_TOP;
+    const int VISIBLE_HISTORY_ROWS = HISTORY_HEIGHT / ROW_HEIGHT;
+    const uint16_t SEPARATOR_COLOR = Display::rgb(70, 70, 90);
 
     // Main Loop, runs until user closes window, or power is lost to mcu
     while (!display.shouldQuit()) {
@@ -33,9 +51,27 @@ int main() {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {display.setQuit();}
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) display.setQuit();
+
+            if (event.type == SDL_MOUSEWHEEL) {
+                if (event.wheel.y > 0 && historyScroll > 0) {
+                    historyScroll--;
+                } else if (event.wheel.y < 0 &&
+                           historyScroll + VISIBLE_HISTORY_ROWS < static_cast<int>(history.size())) {
+                    historyScroll++;
+                }
+            }
+
+            if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_UP && historyScroll > 0) {
+                    historyScroll--;
+                } else if (event.key.keysym.sym == SDLK_DOWN &&
+                           historyScroll + VISIBLE_HISTORY_ROWS < static_cast<int>(history.size())) {
+                    historyScroll++;
+                }
+            }
+
             keypad.handleEvent(event);
         }
-
 
         // Read key presses
         Key pressed = keypad.getKey();
@@ -44,47 +80,95 @@ int main() {
                 inputBuffer[--inputLen] = '\0';
                 resultBuffer[0] = '\0';// delete last character
             } else if (pressed == Key::ENTER) {
-               ExprResult result = evaluate(inputBuffer);
+                ExprResult result = evaluate(inputBuffer);
                 if (result.ok) {
                     snprintf(resultBuffer, sizeof(resultBuffer), "%.6g", result.value);
                     awaitingNewInput = true;
                 } else {
                     snprintf(resultBuffer, sizeof(resultBuffer), "%s", result.error);
+                    awaitingNewInput = true;
+                }
+
+                if (inputLen > 0) {
+                    history.push_back({inputBuffer, resultBuffer});
+                    inputLen = 0;
+                    inputBuffer[0] = '\0';
+                    resultBuffer[0] = '\0';
                 }
             } else if (isPrintable(pressed) && inputLen < 127) {
-               if (awaitingNewInput) {
-                   inputLen = 0;
-                   inputBuffer[0] = '\0';
-                   resultBuffer[0] = '\0';
-                   awaitingNewInput = false;
-               }
+                if (awaitingNewInput) {
+                    inputLen = 0;
+                    inputBuffer[0] = '\0';
+                    resultBuffer[0] = '\0';
+                    awaitingNewInput = false;
+                }
                 inputBuffer[inputLen++] = toChar(pressed);
                 inputBuffer[inputLen] = '\0';
             }
         }
 
+        if (historyScroll < 0) {
+            historyScroll = 0;
+        }
+        int maxHistoryScroll = std::max(0, static_cast<int>(history.size()) - (VISIBLE_HISTORY_ROWS - 1));
+        if (historyScroll > maxHistoryScroll) {
+            historyScroll = maxHistoryScroll;
+        }
 
-        // Background for the expression area
-        display.drawRect(0, 0, DISPLAY_WIDTH, 30, Display::BLACK);
+        display.clear(Display::BLACK);
 
 
-        int margin = 5;
-        int resultX = DISPLAY_WIDTH - Display::textWidth(resultBuffer) - margin;
+        display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, HISTORY_HEIGHT, Display::rgb(10, 10, 18));
+
+        int visibleHistoryCount = std::max(0, VISIBLE_HISTORY_ROWS - 1);
+        int startIndex = historyScroll;
+        int endIndex = std::min(startIndex + visibleHistoryCount, static_cast<int>(history.size()));
+        for (int i = startIndex; i < endIndex; i++) {
+            int row = i - startIndex;
+            int y = HISTORY_TOP + row * ROW_HEIGHT;
+
+            if (y > HISTORY_TOP) {
+                display.drawRect(MARGIN, y - 2, DISPLAY_WIDTH - (MARGIN * 2), 1, SEPARATOR_COLOR);
+            }
+
+            display.drawText(history[i].input.c_str(), MARGIN, y, Display::WHITE);
+
+            int historyResultX = DISPLAY_WIDTH - Display::textWidth(history[i].result.c_str()) - MARGIN;
+            if (historyResultX < 0) historyResultX = 0;
+            display.drawText(history[i].result.c_str(), historyResultX, y + 8, Display::GREEN);
+        }
+
+        int inputRow = endIndex - startIndex;
+        int inputY = HISTORY_TOP + inputRow * ROW_HEIGHT;
+        int resultX = DISPLAY_WIDTH - Display::textWidth(resultBuffer) - MARGIN;
         if (resultX < 0) resultX = 0;
 
-        display.drawText(inputBuffer,  margin,  8, Display::WHITE);
-        display.drawText(resultBuffer, resultX, 18, Display::GREEN);
+        if (inputY > HISTORY_TOP) {
+            display.drawRect(MARGIN, inputY - 2, DISPLAY_WIDTH - (MARGIN * 2), 1, SEPARATOR_COLOR);
+        }
+
+        display.drawText(inputBuffer, MARGIN, inputY, Display::WHITE);
+        display.drawText(resultBuffer, resultX, inputY + 10, Display::GREEN);
 
         bool showCursor = ((SDL_GetTicks() / 500) % 2) == 0;
         if (!awaitingNewInput && showCursor) {
-            int cursorX = margin + Display::textWidth(inputBuffer);
-            int cursorY = 8;
+            int cursorX = MARGIN + Display::textWidth(inputBuffer);
+            int cursorY = inputY;
             int cursorWidth = 2;
             int cursorHeight = FONT_CHAR_HEIGHT;
 
-            if (cursorX < DISPLAY_WIDTH - margin) {
+            if (cursorX < DISPLAY_WIDTH - MARGIN) {
                 display.drawRect(cursorX, cursorY, cursorWidth, cursorHeight, Display::WHITE);
             }
+        }
+
+        if (static_cast<int>(history.size()) > visibleHistoryCount) {
+            int scrollbarX = DISPLAY_WIDTH - 4;
+            int scrollbarHeight = std::max(8, (HISTORY_HEIGHT * visibleHistoryCount) / static_cast<int>(history.size()));
+            int scrollbarY = HISTORY_TOP + ((HISTORY_HEIGHT - scrollbarHeight) * historyScroll) / std::max(1, maxHistoryScroll);
+
+            display.drawRect(scrollbarX, HISTORY_TOP, 3, HISTORY_HEIGHT, Display::rgb(40, 40, 50));
+            display.drawRect(scrollbarX, scrollbarY, 3, scrollbarHeight, Display::WHITE);
         }
 
         // Draw placeholder buttons 4x4 grid
@@ -96,7 +180,6 @@ int main() {
             }
         }
 
-
         display.present();
 
         // Small delay to avoid using 100% CPU
@@ -106,7 +189,5 @@ int main() {
 
     printf("Simulator Closed.\n");
     return 0;
-
-
 }
 

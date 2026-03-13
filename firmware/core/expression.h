@@ -14,6 +14,8 @@ enum class TokenType {
     OP_MINUS,
     OP_MULTIPLY,
     OP_DIVIDE,
+    OP_POWER,
+    OP_NEGATE,
     PAREN_OPEN,
     PAREN_CLOSE,
 };

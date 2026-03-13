@@ -3,6 +3,7 @@
 //
 
 #include "core/expression.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -28,6 +29,8 @@ static int tokenize(const char* expr, Token* tokens) {
     int i = 0;
     int len = strlen(expr);
     printf("Tokenizing string of length %d: [%s]\n", len, expr);
+
+    bool expectUnary = true;
 
     while (i < len) {
         char c = expr[i];
@@ -60,16 +63,17 @@ static int tokenize(const char* expr, Token* tokens) {
 
             if (count >= MAX_TOKENS) return -1;
             tokens[count++] = { TokenType::NUMBER, value + decimal };
+            expectUnary = false;
             continue;
 
         } else {
-            // Operators and parentheses
             TokenType type;
             switch (c) {
                 case '+': type = TokenType::OP_PLUS;     break;
-                case '-': type = TokenType::OP_MINUS;    break;
+                case '-': type = expectUnary ? TokenType::OP_NEGATE : TokenType::OP_MINUS; break;
                 case '*': type = TokenType::OP_MULTIPLY; break;
                 case '/': type = TokenType::OP_DIVIDE;   break;
+                case '^': type = TokenType::OP_POWER;    break;
                 case '(': type = TokenType::PAREN_OPEN;  break;
                 case ')': type = TokenType::PAREN_CLOSE; break;
                 case '=': return count;
@@ -81,6 +85,12 @@ static int tokenize(const char* expr, Token* tokens) {
             if (count >= MAX_TOKENS) return -1;
             tokens[count++] = { type, 0.0f };
             i++;
+
+            if (type == TokenType::PAREN_CLOSE) {
+                expectUnary = false;
+            } else {
+                expectUnary = true;
+            }
         }
 
         if (count >= MAX_STACK) {
@@ -96,6 +106,8 @@ static int precedence(TokenType type) {
         case TokenType::OP_MINUS: return 1;
         case TokenType::OP_MULTIPLY:
         case TokenType::OP_DIVIDE: return 2;
+        case TokenType::OP_NEGATE: return 3;
+        case TokenType::OP_POWER: return 4;
         default: return 0;
     }
 }
@@ -104,7 +116,13 @@ static bool isOperator(TokenType type) {
     return type == TokenType::OP_PLUS       ||
             type == TokenType::OP_MINUS     ||
             type == TokenType::OP_MULTIPLY  ||
-            type == TokenType::OP_DIVIDE;
+            type == TokenType::OP_DIVIDE    ||
+            type == TokenType::OP_POWER     ||
+            type == TokenType::OP_NEGATE;
+}
+
+static bool isRightAssociative(TokenType type) {
+    return type == TokenType::OP_POWER || type == TokenType::OP_NEGATE;
 }
 
 /**
@@ -137,7 +155,16 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
             if (outCount >= MAX_TOKENS) { return -1; }
             postfix[outCount++] = token;
         } else if (isOperator(token.type)) {
-            while (opTop > 0 && isOperator(opStack[opTop - 1].type) && precedence(opStack[opTop - 1].type) >= precedence(token.type)) {
+            while (opTop > 0 && isOperator(opStack[opTop - 1].type)) {
+                TokenType topType = opStack[opTop - 1].type;
+                bool shouldPop = isRightAssociative(token.type)
+                    ? precedence(topType) > precedence(token.type)
+                    : precedence(topType) >= precedence(token.type);
+
+                if (!shouldPop) {
+                    break;
+                }
+
                 if (outCount >= MAX_TOKENS) { return -1; }
                 postfix[outCount++] = opStack[--opTop];
             }
@@ -157,7 +184,7 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
                 if (outCount >= MAX_TOKENS) { return -1; }
                 postfix[outCount++] = top;
             }
-            if (!foundParen) { return -1; } // Mismatched parentheses
+            if (!foundParen) { return -1; }
         }
     }
 
@@ -197,6 +224,9 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
         if (token.type == TokenType::NUMBER) {
             if (valTop >= MAX_STACK) return {false, 0, "Stack overflow"};
             valStack[valTop++] = token.value;
+        } else if (token.type == TokenType::OP_NEGATE) {
+            if (valTop < 1) return {false, 0, "Not enough operands"};
+            valStack[valTop - 1] = -valStack[valTop - 1];
         } else if (isOperator(token.type)) {
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];
@@ -210,6 +240,9 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
                 case TokenType::OP_DIVIDE:
                     if (b == 0.0f) return {false, 0, "Division by zero"};
                     result = a / b;
+                    break;
+                case TokenType::OP_POWER:
+                    result = std::pow(a, b);
                     break;
                 default: break;
             }
