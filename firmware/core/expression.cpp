@@ -237,8 +237,8 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
  *         - 'error': A human-readable error message if 'ok' is false.
  */
 ExprResult evaluate(const char* expr) {
-    Token infix[MAX_TOKENS];
-    Token postfix[MAX_TOKENS];
+    static Token infix[MAX_TOKENS];
+    static Token postfix[MAX_TOKENS];
 
     int infixCount = tokenize(expr, infix);
     printf("Tokenizer produced %d tokens\n", infixCount);

@@ -5,8 +5,8 @@
 #pragma once
 #include <cstdint>
 
-static const int MAX_TOKENS = 32;
-static const int MAX_STACK = 32;
+static const int MAX_TOKENS = 64;
+static const int MAX_STACK = 64;
 
 enum class TokenType {
     NUMBER,

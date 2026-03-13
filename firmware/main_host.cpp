@@ -15,8 +15,8 @@ int main() {
     DisplaySDL display;
     KeypadHost keypad;
 
-    char inputBuffer[32] = {0};
-    char resultBuffer[32] = {0};
+    char inputBuffer[128] = {0};
+    char resultBuffer[64] = {0};
     int inputLen = 0;
     bool awaitingNewInput = false;
 
@@ -51,7 +51,7 @@ int main() {
                 } else {
                     snprintf(resultBuffer, sizeof(resultBuffer), "%s", result.error);
                 }
-            } else if (isPrintable(pressed) && inputLen < 31) {
+            } else if (isPrintable(pressed) && inputLen < 127) {
                if (awaitingNewInput) {
                    inputLen = 0;
                    inputBuffer[0] = '\0';
