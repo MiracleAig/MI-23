@@ -42,6 +42,7 @@ int main() {
     const int HISTORY_BOTTOM = 100;
     const int HISTORY_HEIGHT = HISTORY_BOTTOM - HISTORY_TOP;
     const int VISIBLE_HISTORY_ROWS = HISTORY_HEIGHT / ROW_HEIGHT;
+    const int VISIBLE_HISTORY_COUNT = std::max(0, VISIBLE_HISTORY_ROWS - 1);
     const uint16_t SEPARATOR_COLOR = Display::rgb(70, 70, 90);
 
     // Main Loop, runs until user closes window, or power is lost to mcu
@@ -56,7 +57,7 @@ int main() {
                 if (event.wheel.y > 0 && historyScroll > 0) {
                     historyScroll--;
                 } else if (event.wheel.y < 0 &&
-                           historyScroll + VISIBLE_HISTORY_ROWS < static_cast<int>(history.size())) {
+                           historyScroll + VISIBLE_HISTORY_COUNT < static_cast<int>(history.size())) {
                     historyScroll++;
                 }
             }
@@ -65,7 +66,7 @@ int main() {
                 if (event.key.keysym.sym == SDLK_UP && historyScroll > 0) {
                     historyScroll--;
                 } else if (event.key.keysym.sym == SDLK_DOWN &&
-                           historyScroll + VISIBLE_HISTORY_ROWS < static_cast<int>(history.size())) {
+                           historyScroll + VISIBLE_HISTORY_COUNT < static_cast<int>(history.size())) {
                     historyScroll++;
                 }
             }
@@ -90,7 +91,15 @@ int main() {
                 }
 
                 if (inputLen > 0) {
+                    int maxHistoryScrollBeforeAppend = std::max(0, static_cast<int>(history.size()) - VISIBLE_HISTORY_COUNT);
+                    bool wasNearBottom = historyScroll >= std::max(0, maxHistoryScrollBeforeAppend - 1);
+
                     history.push_back({inputBuffer, resultBuffer});
+
+                    if (wasNearBottom) {
+                        historyScroll = std::max(0, static_cast<int>(history.size()) - VISIBLE_HISTORY_COUNT);
+                    }
+
                     inputLen = 0;
                     inputBuffer[0] = '\0';
                     resultBuffer[0] = '\0';
@@ -110,19 +119,17 @@ int main() {
         if (historyScroll < 0) {
             historyScroll = 0;
         }
-        int maxHistoryScroll = std::max(0, static_cast<int>(history.size()) - (VISIBLE_HISTORY_ROWS - 1));
+        int maxHistoryScroll = std::max(0, static_cast<int>(history.size()) - VISIBLE_HISTORY_COUNT);
         if (historyScroll > maxHistoryScroll) {
             historyScroll = maxHistoryScroll;
         }
 
         display.clear(Display::BLACK);
 
-
         display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, HISTORY_HEIGHT, Display::rgb(10, 10, 18));
 
-        int visibleHistoryCount = std::max(0, VISIBLE_HISTORY_ROWS - 1);
         int startIndex = historyScroll;
-        int endIndex = std::min(startIndex + visibleHistoryCount, static_cast<int>(history.size()));
+        int endIndex = std::min(startIndex + VISIBLE_HISTORY_COUNT, static_cast<int>(history.size()));
         for (int i = startIndex; i < endIndex; i++) {
             int row = i - startIndex;
             int y = HISTORY_TOP + row * ROW_HEIGHT;
@@ -151,7 +158,7 @@ int main() {
         display.drawText(resultBuffer, resultX, inputY + 10, Display::GREEN);
 
         bool showCursor = ((SDL_GetTicks() / 500) % 2) == 0;
-        if (!awaitingNewInput && showCursor) {
+        if (showCursor) {
             int cursorX = MARGIN + Display::textWidth(inputBuffer);
             int cursorY = inputY;
             int cursorWidth = 2;
@@ -162,9 +169,9 @@ int main() {
             }
         }
 
-        if (static_cast<int>(history.size()) > visibleHistoryCount) {
+        if (static_cast<int>(history.size()) > VISIBLE_HISTORY_COUNT) {
             int scrollbarX = DISPLAY_WIDTH - 4;
-            int scrollbarHeight = std::max(8, (HISTORY_HEIGHT * visibleHistoryCount) / static_cast<int>(history.size()));
+            int scrollbarHeight = std::max(8, (HISTORY_HEIGHT * VISIBLE_HISTORY_COUNT) / static_cast<int>(history.size()));
             int scrollbarY = HISTORY_TOP + ((HISTORY_HEIGHT - scrollbarHeight) * historyScroll) / std::max(1, maxHistoryScroll);
 
             display.drawRect(scrollbarX, HISTORY_TOP, 3, HISTORY_HEIGHT, Display::rgb(40, 40, 50));
@@ -190,4 +197,3 @@ int main() {
     printf("Simulator Closed.\n");
     return 0;
 }
-

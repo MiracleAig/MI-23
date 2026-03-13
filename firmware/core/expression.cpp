@@ -7,6 +7,18 @@
 #include <cstdio>
 #include <cstring>
 
+
+static bool canEndValue(TokenType type) {
+    return type == TokenType::NUMBER || type == TokenType::PAREN_CLOSE;
+}
+
+static bool canStartValue(TokenType type) {
+    return type == TokenType::NUMBER ||
+           type == TokenType::PAREN_OPEN ||
+           type == TokenType::OP_NEGATE;
+}
+
+
 /**
  * @brief Tokenizes an arithmetic expression into a sequence of tokens.
  *
@@ -31,6 +43,8 @@ static int tokenize(const char* expr, Token* tokens) {
     printf("Tokenizing string of length %d: [%s]\n", len, expr);
 
     bool expectUnary = true;
+    TokenType previousType = TokenType::OP_PLUS;
+    bool hasPreviousToken = false;
 
     while (i < len) {
         char c = expr[i];
@@ -38,6 +52,11 @@ static int tokenize(const char* expr, Token* tokens) {
         if (c == ' ') {i++; continue; }
 
         if ((c >= '0' && c <= '9') || c == '.') {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+
             float value = 0.0f;
             float decimal = 0.0f;
             bool inDecimal = false;
@@ -63,6 +82,8 @@ static int tokenize(const char* expr, Token* tokens) {
 
             if (count >= MAX_TOKENS) return -1;
             tokens[count++] = { TokenType::NUMBER, value + decimal };
+            previousType = TokenType::NUMBER;
+            hasPreviousToken = true;
             expectUnary = false;
             continue;
 
@@ -82,9 +103,17 @@ static int tokenize(const char* expr, Token* tokens) {
                     return -1;
             }
 
+            if (hasPreviousToken && canEndValue(previousType) && canStartValue(type)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+
             if (count >= MAX_TOKENS) return -1;
             tokens[count++] = { type, 0.0f };
             i++;
+
+            previousType = type;
+            hasPreviousToken = true;
 
             if (type == TokenType::PAREN_CLOSE) {
                 expectUnary = false;
@@ -99,7 +128,6 @@ static int tokenize(const char* expr, Token* tokens) {
     }
     return count;
 }
-
 static int precedence(TokenType type) {
     switch (type) {
         case TokenType::OP_PLUS:
