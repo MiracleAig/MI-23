@@ -7,6 +7,7 @@
 #include "core/expression.h"
 
 #include <cstdio>
+#include <SDL2/SDL.h>
 
 int main() {
     printf("Calculator Simulator Is Starting...\n");
@@ -18,6 +19,7 @@ int main() {
     char resultBuffer[32] = {0};
     int inputLen = 0;
     bool awaitingNewInput = false;
+
 
     display.init();
     keypad.init();
@@ -33,6 +35,7 @@ int main() {
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) display.setQuit();
             keypad.handleEvent(event);
         }
+
 
         // Read key presses
         Key pressed = keypad.getKey();
@@ -60,12 +63,29 @@ int main() {
             }
         }
 
-        // Draw the frame
-        display.clear(DisplaySDL::rgb(30,30,30)); // DARK GRAY
 
-        display.drawRect(10, 10, 300, 80, Display::BLACK);
-        display.drawText(inputBuffer, 10, 10, Display::WHITE);
-        display.drawText(resultBuffer, 290, 20, Display::GREEN);
+        // Background for the expression area
+        display.drawRect(0, 0, DISPLAY_WIDTH, 30, Display::BLACK);
+
+
+        int margin = 5;
+        int resultX = DISPLAY_WIDTH - Display::textWidth(resultBuffer) - margin;
+        if (resultX < 0) resultX = 0;
+
+        display.drawText(inputBuffer,  margin,  8, Display::WHITE);
+        display.drawText(resultBuffer, resultX, 18, Display::GREEN);
+
+        bool showCursor = ((SDL_GetTicks() / 500) % 2) == 0;
+        if (!awaitingNewInput && showCursor) {
+            int cursorX = margin + Display::textWidth(inputBuffer);
+            int cursorY = 8;
+            int cursorWidth = 2;
+            int cursorHeight = FONT_CHAR_HEIGHT;
+
+            if (cursorX < DISPLAY_WIDTH - margin) {
+                display.drawRect(cursorX, cursorY, cursorWidth, cursorHeight, Display::WHITE);
+            }
+        }
 
         // Draw placeholder buttons 4x4 grid
         for (int row = 0; row < 4; row++) {

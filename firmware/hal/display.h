@@ -5,6 +5,8 @@
 #pragma once
 #include <cstdint>
 
+#include "graphics/font.h"
+
 static const int DISPLAY_WIDTH = 320;
 static const int DISPLAY_HEIGHT = 240;
 
@@ -21,6 +23,15 @@ public:
     static uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
         return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
     }
+
+    static int textWidth(const char* text) {
+        int len = 0;
+        while (text[len] != '\0') {
+            len++;
+        }
+        return len * FONT_CHAR_ADVANCE;
+    }
+
 
     static const  uint16_t WHITE = 0xFFFF;
     static const  uint16_t BLACK = 0x0000;
