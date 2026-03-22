@@ -20,6 +20,9 @@ if(PLATFORM STREQUAL "host")
             firmware/graphics/font.h
             firmware/core/expression.cpp
             firmware/core/expression.h
+            firmware/ui/history.h
+            firmware/ui/calculator_app.cpp
+            firmware/ui/calculator_app.h
     )
 
     target_include_directories(mi23 PRIVATE
