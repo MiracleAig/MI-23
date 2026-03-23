@@ -27,22 +27,20 @@ project(mi23)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT DEFINED PLATFORM)
-    set(PLATFORM "host")
+if(PLATFORM STREQUAL "rp2350")
+    pico_sdk_init()
 endif()
 
-message(STATUS "Building for platform: ${PLATFORM}")
+add_library(expression_lib STATIC
+        firmware/core/expression.cpp
+        firmware/core/expression.h
+)
+target_include_directories(expression_lib PUBLIC
+        firmware/
+)
 
 if(PLATFORM STREQUAL "host")
     find_package(SDL2 REQUIRED)
-
-    add_library(expression_lib STATIC
-            firmware/core/expression.cpp
-            firmware/core/expression.h
-    )
-    target_include_directories(expression_lib PUBLIC
-            firmware/
-    )
 
     add_executable(mi23
             firmware/main_host.cpp
@@ -86,8 +84,6 @@ if(PLATFORM STREQUAL "host")
     gtest_discover_tests(mi23_tests)
 
 elseif(PLATFORM STREQUAL "rp2350")
-    pico_sdk_init()
-
 
     add_executable(mi23
             firmware/hal/rp2350/main_rp2350.cpp
@@ -95,11 +91,14 @@ elseif(PLATFORM STREQUAL "rp2350")
             firmware/hal/rp2350/st7789.h
             firmware/hal/rp2350/display_rp2350.cpp
             firmware/hal/rp2350/display_rp2350.h
+            firmware/hal/rp2350/keypad_rp2350.cpp
+            firmware/hal/rp2350/keypad_rp2350.h
     )
 
     target_link_libraries(mi23 PRIVATE
             pico_stdlib
             hardware_spi
+            expression_lib
     )
 
     target_include_directories(mi23 PRIVATE
@@ -107,7 +106,6 @@ elseif(PLATFORM STREQUAL "rp2350")
             firmware/hal/rp2350/
     )
 
-    # This generates the flashable .uf2 file
     pico_add_extra_outputs(mi23)
 
 endif()

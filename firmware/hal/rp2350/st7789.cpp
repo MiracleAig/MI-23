@@ -53,7 +53,12 @@ void ST7789::init() {
     // MV (bit 5) = 1 — swap X and Y axes (this is what rotates 90 degrees)
     // All other bits 0
     sendCommand(ST7789_MADCTL);
-    sendData(0x60);
+    sendData(0xA0);
+
+    // 0x00 portrait normal
+    // 0xC0 portrait inverted (180)
+    // 0x60 lanscape normal
+    // 0xA0 landscape inverted (180)
 
     sendCommand(ST7789_INVON);  sleep_ms(10); // needed for ST7789
     sendCommand(ST7789_NORON);  sleep_ms(10);
