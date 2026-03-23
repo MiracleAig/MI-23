@@ -4,14 +4,8 @@
 # Run this from the ~/calculator/ directory
 
 set -e
-# set -e means "exit immediately if any command fails"
-# This prevents the script from continuing if cmake or make errors out
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# This finds the absolute path of wherever the script lives
-# so the script works no matter what directory you run it from
-
-BUILD_DIR="$PROJECT_DIR/build"
 
 echo "================================"
 echo "  MI-23 Build System"
@@ -20,6 +14,8 @@ echo "================================"
 # Parse arguments
 CLEAN=false
 PLATFORM="host"
+RUN_TESTS=false
+RUN_AFTER=false
 
 for arg in "$@"; do
     case $arg in
@@ -29,55 +25,73 @@ for arg in "$@"; do
         --platform=*)
             PLATFORM="${arg#*=}"
             ;;
+        --test)
+            RUN_TESTS=true
+            PLATFORM="host"
+            # Tests can only run on host, so force the platform
+            ;;
+        --run)
+            RUN_AFTER=true
+            ;;
         --help)
             echo "Usage: ./build.sh [options]"
             echo ""
             echo "Options:"
-            echo "  --clean          Wipe build folder before building"
-            echo "  --platform=host  Build for PC simulator (default)"
+            echo "  --clean            Wipe build folder before building"
+            echo "  --platform=host    Build for PC simulator (default)"
             echo "  --platform=rp2350  Build for real hardware"
-            echo "  --help           Show this message"
+            echo "  --test             Build and run unit tests (forces host platform)"
+            echo "  --run              Launch the simulator after building"
+            echo "  --help             Show this message"
             exit 0
             ;;
     esac
 done
 
+# Each platform gets its own build directory so they never overwrite each other
+# build-host/ for the simulator, build-rp2350/ for real hardware
+BUILD_DIR="$PROJECT_DIR/build-$PLATFORM"
+
 # Clean if requested
 if [ "$CLEAN" = true ]; then
-    echo "Cleaning build directory..."
+    echo "Cleaning $BUILD_DIR..."
     rm -rf "$BUILD_DIR"
 fi
 
-# Create build directory if it doesn't exist
 mkdir -p "$BUILD_DIR"
 
-# Configure with CMake if not already configured
-# or if we just cleaned
+# Configure with CMake if not already configured or if we just cleaned
 if [ ! -f "$BUILD_DIR/Makefile" ]; then
-    echo "Configuring with CMake for platform: $PLATFORM"
+    echo "Configuring CMake for platform: $PLATFORM"
     cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DPLATFORM="$PLATFORM"
 fi
 
 # Build
-echo "Building MI-23..."
+echo "Building MI-23 ($PLATFORM)..."
 cmake --build "$BUILD_DIR" -- -j$(nproc)
-# -j$(nproc) uses all available CPU cores to build faster
-# nproc is a command that returns how many CPU cores your machine has
 
-# Check if build succeeded
-if [ $? -eq 0 ]; then
+echo ""
+echo "================================"
+echo "  Build successful!"
+echo "================================"
+
+# Run tests if --test was passed
+if [ "$RUN_TESTS" = true ]; then
     echo ""
-    echo "================================"
-    echo "  Build successful!"
-    echo "  Binary: $BUILD_DIR/mi23"
-    echo "================================"
-    echo ""
-    echo "Run with:"
-    echo "  $BUILD_DIR/mi23"
-else
-    echo ""
-    echo "================================"
-    echo "  Build FAILED"
-    echo "================================"
-    exit 1
+    echo "Running unit tests..."
+    echo "--------------------------------"
+    cd "$BUILD_DIR"
+    ctest --output-on-failure
+    cd "$PROJECT_DIR"
+fi
+
+# Launch simulator if --run was passed
+if [ "$RUN_AFTER" = true ]; then
+    if [ "$PLATFORM" != "host" ]; then
+        echo "Warning: --run only works with host platform, skipping"
+    else
+        echo ""
+        echo "Launching simulator..."
+        "$BUILD_DIR/mi23"
+    fi
 fi

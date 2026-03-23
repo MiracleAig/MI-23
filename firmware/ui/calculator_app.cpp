@@ -1,5 +1,5 @@
 //
-// Created by miracleaigbogun on 3/21/26.
+// Created by Miracle Aigbogun on 3/21/26.
 //
 
 #include "calculator_app.h"
@@ -93,7 +93,7 @@ void CalculatorApp::processKey(Key pressed) {
 
     } else if (pressed == Key::ENTER) {
         if (m_inputLen > 0) {
-            // Evaluate the expression and store result
+            // Evaluate the expression and store its result
             ExprResult result = evaluate(m_inputBuffer);
             if (result.ok) {
                 snprintf(m_resultBuffer, sizeof(m_resultBuffer),
