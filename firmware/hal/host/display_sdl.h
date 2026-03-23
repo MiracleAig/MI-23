@@ -1,5 +1,5 @@
 //
-// Created by miracleaigbogun on 3/10/26.
+// Created by Miracle Aigbogun on 3/10/26.
 //
 #pragma once
 #include "hal/display.h"

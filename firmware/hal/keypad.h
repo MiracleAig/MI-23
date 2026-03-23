@@ -1,5 +1,5 @@
 //
-// Created by miracleaigbogun on 3/10/26.
+// Created by Miracle Aigbogun on 3/10/26.
 //
 
 #pragma once
@@ -25,6 +25,7 @@ enum class Key {
     OPEN_PAREN  = 0x28,  // '('
     CLOSE_PAREN = 0x29,  // ')'
     DOT         = 0x2E,  // '.' (decimal point)
+    POWER       = 0x5E,  // '^'
     // These have no ASCII equivalent so just let them count up from 0x80
     // (above 127 so they never collide with any printable ASCII character)
     ENTER  = 0x80,
