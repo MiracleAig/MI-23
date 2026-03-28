@@ -40,7 +40,6 @@ static int tokenize(const char* expr, Token* tokens) {
     int count = 0;
     int i = 0;
     int len = strlen(expr);
-    printf("Tokenizing string of length %d: [%s]\n", len, expr);
 
     bool expectUnary = true;
     TokenType previousType = TokenType::OP_PLUS;
@@ -48,7 +47,6 @@ static int tokenize(const char* expr, Token* tokens) {
 
     while (i < len) {
         char c = expr[i];
-        printf("Tokenizer seeing char: '%c' (ascii %d)\n", c, (int)c);
         if (c == ' ') {i++; continue; }
 
         if ((c >= '0' && c <= '9') || c == '.') {
@@ -61,10 +59,12 @@ static int tokenize(const char* expr, Token* tokens) {
             float decimal = 0.0f;
             bool inDecimal = false;
             float decimalPlace = 0.1f;
+            bool sawDigit = false;
 
             while (i < len) {
                 char d = expr[i];
                 if (d >= '0' && d <= '9') {
+                    sawDigit = true;
                     if (inDecimal) {
                         decimal += (d - '0') * decimalPlace;
                         decimalPlace *= 0.1f;
@@ -78,6 +78,9 @@ static int tokenize(const char* expr, Token* tokens) {
                 } else {
                     break;
                 }
+            }
+            if (!sawDigit) {
+                return -1;
             }
 
             if (count >= MAX_TOKENS) return -1;
@@ -99,7 +102,6 @@ static int tokenize(const char* expr, Token* tokens) {
                 case ')': type = TokenType::PAREN_CLOSE; break;
                 case '=': return count;
                 default:
-                    printf("Unknown char: '%c' (ascii %d)\n", c, (int)c);
                     return -1;
             }
 
@@ -302,12 +304,10 @@ ExprResult evaluate(const char* expr) {
     static Token postfix[MAX_TOKENS];
 
     int infixCount = tokenize(expr, infix);
-    printf("Tokenizer produced %d tokens\n", infixCount);
     if (infixCount < 0) return {false, 0, "Invalid expression"};
     if (infixCount == 0) return {false, 0, "Empty expression"};
 
     int postfixCount = shuntingYard(infix, infixCount, postfix);
-    printf("Shunting Yard produced %d tokens\n", postfixCount);
     if (postfixCount < 0) return {false, 0, "Invalid expression"};
 
     return evalPostfix(postfix, postfixCount);

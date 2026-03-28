@@ -56,7 +56,14 @@ TEST(ExpressionParser, NestedParentheses) {
 }
 
 TEST(ExpressionParser, DivisionByZero) {
-    // Your parser either returns ok=false OR an inf value — check which
     ExprResult r = evaluate("1/0");
     EXPECT_TRUE(!r.ok || std::isinf(r.value));
+}
+
+TEST(ExpressionParser, RejectStandaloneDecimalPoint) {
+    EXPECT_EVAL_ERROR(".");
+}
+
+TEST(ExpressionParser, ImplicitMultiplication) {
+    EXPECT_EVAL("2(3+4)", 14.0f);
 }
