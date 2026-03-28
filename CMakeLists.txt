@@ -50,7 +50,7 @@ if(PLATFORM STREQUAL "host")
             firmware/ui/history.h
             firmware/ui/calculator_app.cpp
             firmware/ui/calculator_app.h
-            firmware/hal/rp2350/pin_config.h
+            firmware/hal/rp2350/config/pin_config.h
     )
 
     target_include_directories(mi23 PRIVATE
@@ -87,12 +87,12 @@ elseif(PLATFORM STREQUAL "rp2350")
 
     add_executable(mi23
             firmware/hal/rp2350/main_rp2350.cpp
-            firmware/hal/rp2350/st7789.cpp
-            firmware/hal/rp2350/st7789.h
-            firmware/hal/rp2350/display_rp2350.cpp
-            firmware/hal/rp2350/display_rp2350.h
-            firmware/hal/rp2350/keypad_rp2350.cpp
-            firmware/hal/rp2350/keypad_rp2350.h
+            firmware/hal/rp2350/drivers/st7789.cpp
+            firmware/hal/rp2350/drivers/st7789.h
+            firmware/hal/rp2350/hal/display_rp2350.cpp
+            firmware/hal/rp2350/hal/display_rp2350.h
+            firmware/hal/rp2350/hal/keypad_rp2350.cpp
+            firmware/hal/rp2350/hal/keypad_rp2350.h
     )
 
     target_link_libraries(mi23 PRIVATE

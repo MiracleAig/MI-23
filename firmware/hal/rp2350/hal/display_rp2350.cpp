@@ -2,7 +2,7 @@
 // Created by Miracle Aigbogun on 3/22/26.
 //
 
-#include "display_rp2350.h"
+#include "hal/display_rp2350.h"
 #include "graphics/font.h"
 
 DisplayRP2350::DisplayRP2350()
@@ -31,30 +31,39 @@ void DisplayRP2350::drawRect(int x, int y, int w, int h, uint16_t color) {
     m_display.fillRect(x, y, w, h, color);
 }
 
-void DisplayRP2350::drawChar(char c, int x, int y, uint16_t color) {
+void DisplayRP2350::drawChar(char c, int x, int y, uint16_t color, int scale) {
     uint8_t idx = (uint8_t)c;
-    // Each character is 5 bytes in FONT_DATA, one byte per column
-    // Each byte represents 8 vertical pixels, LSB at the top
     const uint8_t* bitmap = &FONT_DATA[idx * FONT_CHAR_WIDTH];
 
     for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
         uint8_t colData = bitmap[col];
         for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
             if (colData & (1 << row)) {
-                m_display.drawPixel(x + col, y + row, color);
+                // Draw a scale×scale block instead of a single pixel
+                m_display.fillRect(
+                    x + col * scale,
+                    y + row * scale,
+                    scale, scale,
+                    color
+                );
             }
         }
     }
 }
 
 void DisplayRP2350::drawText(const char* text, int x, int y, uint16_t color) {
+    drawText(text, x, y, color, 1);
+}
+
+void DisplayRP2350::drawText(const char* text, int x, int y, uint16_t color, int scale) {
     int cursorX = x;
     while (*text) {
-        drawChar(*text, cursorX, y, color);
-        cursorX += FONT_CHAR_ADVANCE;
+        drawChar(*text, cursorX, y, color, scale);
+        cursorX += FONT_CHAR_ADVANCE * scale;
         text++;
     }
 }
+
 
 void DisplayRP2350::present() {
     // ST7789 is write-through — pixels go directly to the display

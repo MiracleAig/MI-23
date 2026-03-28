@@ -4,7 +4,7 @@
 
 #pragma once
 #include "hal/display.h"
-#include "st7789.h"
+#include "../drivers/st7789.h"
 #include "hardware/spi.h"
 
 class DisplayRP2350 : public Display {
@@ -17,9 +17,10 @@ public:
     void drawPixel(int x, int y, uint16_t color) override;
     void drawRect(int x, int y, int w, int h, uint16_t color) override;
     void drawText(const char* text, int x, int y, uint16_t color) override;
+    void drawText(const char* text, int x, int y, uint16_t color, int scale);
     void present() override;
 
 private:
-    void drawChar(char c, int x, int y, uint16_t color);
+    void drawChar(char c, int x, int y, uint16_t color, int scale);
     ST7789 m_display;
 };
