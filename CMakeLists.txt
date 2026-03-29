@@ -93,6 +93,8 @@ elseif(PLATFORM STREQUAL "rp2350")
             firmware/hal/rp2350/hal/display_rp2350.h
             firmware/hal/rp2350/hal/keypad_rp2350.cpp
             firmware/hal/rp2350/hal/keypad_rp2350.h
+            firmware/hal/rp2350/hal/keypad_rp2350_2.cpp
+            firmware/hal/rp2350/hal/keypad_rp2350_2.h
     )
 
     target_link_libraries(mi23 PRIVATE

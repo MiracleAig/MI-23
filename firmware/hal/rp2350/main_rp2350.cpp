@@ -3,9 +3,9 @@
 //
 
 #include "pico/stdlib.h"
-#include "hardware/spi.h"
 #include "hal/display_rp2350.h"
 #include "hal/keypad_rp2350.h"
+#include "hal/keypad_rp2350_2.h"    
 #include "core/expression.h"
 #include <cstdio>
 #include <cstring>
@@ -24,10 +24,9 @@ static constexpr int HISTORY_AREA_H  = STATUS_Y - MARGIN;
 static constexpr int MAX_VISIBLE     = (HISTORY_AREA_H - ENTRY_H) / ENTRY_H;
 static constexpr int MAX_CHARS       = (SCREEN_W - MARGIN * 2) / CHAR_W;
 
-
 static const uint16_t COLOR_SEPARATOR = Display::rgb(70, 70, 90);
 
-
+// ── History storage ──────────────────────────────────────────────────────────
 static constexpr int MAX_HISTORY = 20;
 
 struct HistoryEntry {
@@ -41,8 +40,9 @@ static int s_historyCount = 0;
 // ── Live input buffer ────────────────────────────────────────────────────────
 static char s_buf[MAX_CHARS + 1] = {};
 static int  s_len                = 0;
+static int  s_cursor             = 0;  
 
-// ── Ring buffer index helper ─────────────────────────────────────────────────
+// ── Ring buffer helpers ──────────────────────────────────────────────────────
 static const HistoryEntry* getEntry(int index) {
     int total = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
     if (index < 0 || index >= total) return nullptr;
@@ -61,8 +61,7 @@ static void pushHistory(const char* input, const char* result) {
     s_historyCount++;
 }
 
-// ── Layout helper: where does the live input line start? ─────────────────────
-// Both redrawFull() and drawCursor() must agree on this value.
+// ── Layout helper ────────────────────────────────────────────────────────────
 static int getInputY() {
     int total        = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
     int firstVisible = total - MAX_VISIBLE;
@@ -70,51 +69,30 @@ static int getInputY() {
     return MARGIN + (total - firstVisible) * ENTRY_H;
 }
 
-// ── Separator line ───────────────────────────────────────────────────────────
+// ── Drawing helpers ──────────────────────────────────────────────────────────
 static void drawSeparator(DisplayRP2350& display, int y) {
     display.drawRect(MARGIN, y, SCREEN_W - MARGIN * 2, 1, COLOR_SEPARATOR);
 }
 
-// ── Status bar ───────────────────────────────────────────────────────────────
-// Drawn once and never changes, so it has its own function so redrawInputLine()
-// doesn't need to touch it.
 static void drawStatusBar(DisplayRP2350& display) {
-    // Erase the status bar region first so old text doesn't bleed through
     display.drawRect(0, STATUS_Y, SCREEN_W, STATUS_H, Display::BLACK);
     display.drawText("ENT=eval CLR=del ESC=clr",
                      MARGIN, STATUS_Y, Display::GREEN, 1);
 }
 
-// ── Input line redraw ────────────────────────────────────────────────────────
-// Called on every keypress except ENTER.
-// Only touches the input line region — history and status bar are untouched.
 static void redrawInputLine(DisplayRP2350& display) {
     int inputY = getInputY();
-
-    // Erase the entire input line region (expression row + result row + gap)
-    // by painting it black. This is the ONLY black rect we draw — no full clear.
     display.drawRect(0, inputY, SCREEN_W, ENTRY_H, Display::BLACK);
-
-    // Redraw the current input buffer contents
     display.drawText(s_buf, MARGIN, inputY, Display::WHITE, SCALE);
-
     display.present();
 }
 
-// ── Full redraw ──────────────────────────────────────────────────────────────
-// Called only when history changes (i.e. after ENTER) and on first boot.
-// Does NOT call display.clear() — every region is explicitly overdrawn
-// so the screen never flashes black.
 static void redrawFull(DisplayRP2350& display) {
     int total        = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
     int firstVisible = total - MAX_VISIBLE;
     if (firstVisible < 0) firstVisible = 0;
     int visibleCount = total - firstVisible;
 
-    // ── History region ───────────────────────────────────────────────────────
-    // Paint the entire history area black first, then draw entries on top.
-    // We do this as one big rect rather than pixel-by-pixel so it's fast,
-    // and it only covers the history area — not the input line or status bar.
     int historyAreaBottom = MARGIN + visibleCount * ENTRY_H;
     display.drawRect(0, MARGIN, SCREEN_W, historyAreaBottom, Display::BLACK);
 
@@ -125,14 +103,10 @@ static void redrawFull(DisplayRP2350& display) {
         int row = i - firstVisible;
         int y   = MARGIN + row * ENTRY_H;
 
-        if (row > 0) {
-            drawSeparator(display, y - 2);
-        }
+        if (row > 0) drawSeparator(display, y - 2);
 
-        // Expression — left-aligned
         display.drawText(e->input, MARGIN, y, Display::WHITE, SCALE);
 
-        // Result — right-aligned, one char-height below expression
         int resultW = static_cast<int>(strlen(e->result)) * CHAR_W;
         int resultX = SCREEN_W - resultW - MARGIN;
         if (resultX < MARGIN) resultX = MARGIN;
@@ -140,28 +114,21 @@ static void redrawFull(DisplayRP2350& display) {
                          Display::GREEN, SCALE);
     }
 
-    // ── Separator above input line ───────────────────────────────────────────
     int inputY = MARGIN + visibleCount * ENTRY_H;
-    if (visibleCount > 0) {
-        drawSeparator(display, inputY - 2);
-    }
+    if (visibleCount > 0) drawSeparator(display, inputY - 2);
 
-    // ── Input line ───────────────────────────────────────────────────────────
-    // Erase and redraw, same as redrawInputLine() but inline here so we
-    // don't call getInputY() twice (it would give the same answer, but
-    // keeping it explicit makes the flow easier to follow).
     display.drawRect(0, inputY, SCREEN_W, ENTRY_H, Display::BLACK);
     display.drawText(s_buf, MARGIN, inputY, Display::WHITE, SCALE);
 
-
     drawStatusBar(display);
-
     display.present();
 }
 
+// ── Cursor ───────────────────────────────────────────────────────────────────
+// Now uses s_cursor instead of s_len so it sits at the cursor position
 static void drawCursor(DisplayRP2350& display, bool visible) {
     int inputY  = getInputY();
-    int cursorX = MARGIN + s_len * CHAR_W;
+    int cursorX = MARGIN + s_cursor * CHAR_W;   // ← was s_len
     if (cursorX >= SCREEN_W - MARGIN) return;
 
     uint16_t color = visible ? Display::WHITE : Display::BLACK;
@@ -169,14 +136,17 @@ static void drawCursor(DisplayRP2350& display, bool visible) {
     display.present();
 }
 
+// ── Entry point ──────────────────────────────────────────────────────────────
 int main() {
     stdio_init_all();
 
-    DisplayRP2350 display;
+    DisplayRP2350  display;
     display.init();
 
-    KeypadRP2350 keypad;
-    keypad.init();
+    KeypadRP2350   keypad1;
+    KeypadRP2350_2 keypad2;   
+    keypad1.init();
+    keypad2.init();            
 
     redrawFull(display);
 
@@ -185,15 +155,35 @@ int main() {
     drawCursor(display, cursorVisible);
 
     while (true) {
-        Key k = keypad.getKey();
+        // Poll both keypads — keypad2 only checked if keypad1 returns nothing
+        Key k = keypad1.getKey();
+        if (k == Key::NONE) k = keypad2.getKey();   
 
         if (k != Key::NONE) {
-
             drawCursor(display, false);
 
-            if (k == Key::CLEAR) {
-                if (s_len > 0) {
-                    s_buf[--s_len] = '\0';
+            if (k == Key::CURSOR_LEFT) {             
+                if (s_cursor > 0) {
+                    s_cursor--;
+                    redrawInputLine(display);
+                }
+            }
+
+            else if (k == Key::CURSOR_RIGHT) {       
+                if (s_cursor < s_len) {
+                    s_cursor++;
+                    redrawInputLine(display);
+                }
+            }
+
+            else if (k == Key::CLEAR) {
+                // Backspace at cursor position — remove character to the left
+                if (s_cursor > 0) {
+                    memmove(&s_buf[s_cursor - 1],
+                            &s_buf[s_cursor],
+                            s_len - s_cursor + 1);
+                    s_len--;
+                    s_cursor--;
                     redrawInputLine(display);
                 }
             }
@@ -201,6 +191,7 @@ int main() {
             else if (k == Key::ESCAPE) {
                 if (s_len > 0) {
                     s_len    = 0;
+                    s_cursor = 0;                    
                     s_buf[0] = '\0';
                     redrawInputLine(display);
                 }
@@ -221,6 +212,7 @@ int main() {
                     pushHistory(s_buf, numBuf);
 
                     s_len    = 0;
+                    s_cursor = 0;                    
                     s_buf[0] = '\0';
 
                     redrawFull(display);
@@ -228,17 +220,20 @@ int main() {
             }
 
             else if (isPrintable(k) && s_len < MAX_CHARS) {
-                s_buf[s_len++] = toChar(k);
-                s_buf[s_len]   = '\0';
+                // Insert at cursor position instead of appending   
+                memmove(&s_buf[s_cursor + 1],
+                        &s_buf[s_cursor],
+                        s_len - s_cursor + 1);
+                s_buf[s_cursor] = toChar(k);
+                s_len++;
+                s_cursor++;
                 redrawInputLine(display);
             }
 
-            // Reset blink timer and show cursor after redraw
             cursorVisible = true;
             lastBlink     = to_ms_since_boot(get_absolute_time());
             drawCursor(display, cursorVisible);
         }
-
 
         uint32_t now = to_ms_since_boot(get_absolute_time());
         if (now - lastBlink >= 500) {
