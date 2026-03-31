@@ -58,11 +58,22 @@ if(PLATFORM STREQUAL "host")
             ${SDL2_INCLUDE_DIRS}
     )
 
-    target_link_libraries(mi23 PRIVATE
-            SDL2::SDL2
-            expression_lib
-    )
-
+    if(BUILD_RELEASE)
+        target_link_libraries(mi23 PRIVATE
+                SDL2::SDL2-static
+                expression_lib
+                pthread
+                dl
+        )
+        message(STATUS "SDL2: static linking (release build)")
+    else()
+        target_link_libraries(mi23 PRIVATE
+                SDL2::SDL2
+                expression_lib
+        )
+        message(STATUS "SDL2: dynamic linking (debug build)")
+    endif()
+    
     find_package(GTest REQUIRED)
     include(GoogleTest)
     enable_testing()
