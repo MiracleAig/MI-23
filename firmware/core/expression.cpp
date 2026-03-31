@@ -40,7 +40,6 @@ static int tokenize(const char* expr, Token* tokens) {
     int count = 0;
     int i = 0;
     int len = strlen(expr);
-    printf("Tokenizing string of length %d: [%s]\n", len, expr);
 
     bool expectUnary = true;
     TokenType previousType = TokenType::OP_PLUS;
@@ -48,8 +47,21 @@ static int tokenize(const char* expr, Token* tokens) {
 
     while (i < len) {
         char c = expr[i];
-        printf("Tokenizer seeing char: '%c' (ascii %d)\n", c, (int)c);
         if (c == ' ') {i++; continue; }
+
+        if ((unsigned char)c == 128) {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+            if (count >= MAX_TOKENS) return -1;
+            tokens[count++] = { TokenType::NUMBER, 3.14159265f };
+            previousType     = TokenType::NUMBER;
+            hasPreviousToken = true;
+            expectUnary      = false;
+            i++;
+            continue;
+        }
 
         if ((c >= '0' && c <= '9') || c == '.') {
             if (hasPreviousToken && canEndValue(previousType)) {
@@ -61,10 +73,12 @@ static int tokenize(const char* expr, Token* tokens) {
             float decimal = 0.0f;
             bool inDecimal = false;
             float decimalPlace = 0.1f;
+            bool sawDigit = false;
 
             while (i < len) {
                 char d = expr[i];
                 if (d >= '0' && d <= '9') {
+                    sawDigit = true;
                     if (inDecimal) {
                         decimal += (d - '0') * decimalPlace;
                         decimalPlace *= 0.1f;
@@ -78,6 +92,9 @@ static int tokenize(const char* expr, Token* tokens) {
                 } else {
                     break;
                 }
+            }
+            if (!sawDigit) {
+                return -1;
             }
 
             if (count >= MAX_TOKENS) return -1;
@@ -99,7 +116,6 @@ static int tokenize(const char* expr, Token* tokens) {
                 case ')': type = TokenType::PAREN_CLOSE; break;
                 case '=': return count;
                 default:
-                    printf("Unknown char: '%c' (ascii %d)\n", c, (int)c);
                     return -1;
             }
 
@@ -125,6 +141,10 @@ static int tokenize(const char* expr, Token* tokens) {
         if (count >= MAX_STACK) {
             return -1;
         }
+    }
+    printf("Token dump (%d tokens) :\n", count);
+    for (int i = 0; i < count; i++) {
+        printf(" [%d] type=%d value%.6f\n", i, (int)tokens[i].type, tokens[i].value);
     }
     return count;
 }
@@ -298,6 +318,14 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
  *         - 'error': A human-readable error message if 'ok' is false.
  */
 ExprResult evaluate(const char* expr) {
+
+    printf("evaluate bytes: ");
+    for (int i = 0; expr[i] != '\0' || i == 0; i++) {
+        if (expr[i] == '\0') { printf("(null terminator)"); break; }
+        printf("%d ", (unsigned char)expr[i]);
+    }
+    printf("\n");
+
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];
 
@@ -307,7 +335,6 @@ ExprResult evaluate(const char* expr) {
     if (infixCount == 0) return {false, 0, "Empty expression"};
 
     int postfixCount = shuntingYard(infix, infixCount, postfix);
-    printf("Shunting Yard produced %d tokens\n", postfixCount);
     if (postfixCount < 0) return {false, 0, "Invalid expression"};
 
     return evalPostfix(postfix, postfixCount);

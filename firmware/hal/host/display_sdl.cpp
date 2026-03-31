@@ -71,7 +71,7 @@ void DisplaySDL::drawRect(int x, int y, int w, int h, uint16_t color) {
     SDL_RenderFillRect(m_renderer, &rect);
 }
 
-void DisplaySDL::drawChar(char c, int x, int y, uint16_t color, uint16_t bgColor) {
+void DisplaySDL::drawChar(char c, int x, int y, uint16_t color) {
     uint8_t ascii = static_cast<uint8_t>(c);
     const uint8_t* glyph = &FONT_DATA[ascii * FONT_CHAR_WIDTH];
     for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
@@ -79,21 +79,15 @@ void DisplaySDL::drawChar(char c, int x, int y, uint16_t color, uint16_t bgColor
         for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
             if ((col_byte >> row) & 1) {
                 drawPixel(x + col, y + row, color);
-            } else {
-                drawPixel(x + col, y + row, bgColor);
             }
         }
-    }
-    // Draw the spacing between characters (1px)
-    for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-        drawPixel(x + FONT_CHAR_WIDTH, y + row, bgColor);
     }
 }
 
 void DisplaySDL::drawText(const char* text, int x, int y, uint16_t color) {
     int cursor_x = x;
     for (int i = 0; text[i] != '\0'; i++) {
-        drawChar(text[i], cursor_x, y, color, Display::BLACK);
+        drawChar(text[i], cursor_x, y, color);  // bgColor argument removed
         cursor_x += FONT_CHAR_ADVANCE;
     }
 }

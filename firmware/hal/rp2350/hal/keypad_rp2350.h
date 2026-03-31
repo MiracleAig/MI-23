@@ -1,10 +1,12 @@
 //
 // Created by Miracle Aigbogun on 3/23/26.
+// First 4x4 Keypad - Numbers and basic input keys
 //
 
 #pragma once
 
 #include "hal/keypad.h"
+#include "config/pin_config.h"
 #include "pico/stdlib.h"
 
 class KeypadRP2350 : public Keypad {
@@ -29,6 +31,10 @@ private:
     static constexpr uint32_t REPEAT_RATE_MS  = 80;
 
 
-    static constexpr uint ROW_PINS[4] = {19, 20, 26, 21};
-    static constexpr uint COL_PINS[4] = {16,  6,  9,  7};
+    static constexpr uint ROW_PINS[4] = {
+        PIN_KP1_ROW_0, PIN_KP1_ROW_1, PIN_KP1_ROW_2, PIN_KP1_ROW_3
+    };
+    static constexpr uint COL_PINS[4] = {
+        PIN_KP1_COL_0, PIN_KP1_COL_1, PIN_KP1_COL_2, PIN_KP1_COL_3
+    };
 };
