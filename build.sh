@@ -150,3 +150,4 @@ if [ "$RUN_AFTER" = true ]; then
         echo "Launching simulator..."
         "$BUILD_DIR/mi23"
     fi
+fi
