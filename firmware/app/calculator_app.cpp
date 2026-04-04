@@ -2,9 +2,9 @@
 // Created by Miracle Aigbogun on 3/21/26.
 //
 
-#include "calculator_app.h"
-#include "core/expression.h"
-#include "hal/host/display_sdl.h"
+#include "app/calculator_app.h"
+#include "math/expression.h"
+#include "platform/host/display_sdl.h"
 #include "graphics/font.h"
 #include <SDL2/SDL.h>
 #include <algorithm>

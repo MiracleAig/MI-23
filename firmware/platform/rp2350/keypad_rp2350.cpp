@@ -2,7 +2,7 @@
 // Created by Miracle Aigbogun on 3/23/26.
 //
 
-#include "hal/keypad_rp2350.h"
+#include "platform/rp2350/keypad_rp2350.h"
 #include "pico/stdlib.h"
 
 

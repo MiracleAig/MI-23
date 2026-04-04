@@ -2,7 +2,7 @@
 // Created by Miracle Aigbogun on 3/12/26.
 //
 
-#include "core/expression.h"
+#include "math/expression.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>

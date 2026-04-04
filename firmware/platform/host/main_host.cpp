@@ -2,9 +2,9 @@
 // Created by Miracle Aigbogun on 3/10/26.
 //
 
-#include "hal/host/display_sdl.h"
-#include "hal/host/keypad_host.h"
-#include "ui/calculator_app.h"
+#include "platform/host/display_sdl.h"
+#include "platform/host/keypad_host.h"
+#include "app/calculator_app.h"
 #include <cstdio>
 
 int main() {

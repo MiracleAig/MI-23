@@ -2,7 +2,7 @@
 // Created by Miracle Aigbogun on 3/22/26.
 //
 
-#include "hal/display_rp2350.h"
+#include "platform/rp2350/display_rp2350.h"
 #include "graphics/font.h"
 
 DisplayRP2350::DisplayRP2350()

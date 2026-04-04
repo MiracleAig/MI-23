@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "history.h"
-#include "hal/host/display_sdl.h"
-#include "hal/host/keypad_host.h"
+#include "app/history.h"
+#include "platform/host/display_sdl.h"
+#include "platform/host/keypad_host.h"
 #include <vector>
 
 static constexpr int MARGIN       = 5;

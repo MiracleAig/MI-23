@@ -3,10 +3,10 @@
 //
 
 #include "pico/stdlib.h"
-#include "hal/display_rp2350.h"
-#include "hal/keypad_rp2350.h"
-#include "hal/keypad_rp2350_2.h"    
-#include "core/expression.h"
+#include "display_rp2350.h"
+#include "platform/rp2350/keypad_rp2350.h"
+#include "keypad_rp2350_2.h"
+#include "math/expression.h"
 #include <cstdio>
 #include <cstring>
 

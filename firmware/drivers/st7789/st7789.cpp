@@ -2,7 +2,7 @@
 // Created by Miracle Aigbogun on 3/22/26.
 //
 
-#include "drivers/st7789.h"
+#include "drivers/st7789/st7789.h"
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 

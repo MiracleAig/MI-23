@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 if(NOT PLATFORM STREQUAL "host")
     return()
 endif()
@@ -14,7 +12,7 @@ add_executable(mi23_tests
 
 target_include_directories(mi23_tests
         PRIVATE
-        ${PROJECT_SOURCE_DIR}/firmware
+        ../firmware
 )
 
 target_link_libraries(mi23_tests
