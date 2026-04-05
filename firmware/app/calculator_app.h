@@ -24,7 +24,7 @@ static const uint16_t COLOR_SCROLLBAR_BG = Display::rgb(40, 40, 50);
 
 // ── Button grid layout ───────────────────────────────────────────────────────
 static constexpr int BTN_COLS      = 4;
-static constexpr int BTN_ROWS      = 6;
+static constexpr int BTN_ROWS      = 7;
 static constexpr int BTN_MARGIN    = 4;   // gap between buttons in pixels
 static constexpr int BTN_AREA_TOP  = 102; // y where the button grid starts
 static constexpr int BTN_AREA_H    = DISPLAY_HEIGHT - BTN_AREA_TOP - 2;
@@ -51,6 +51,7 @@ private:
 
     char m_inputBuffer[128];
     char m_resultBuffer[64];
+    bool m_resultIsError;
     int  m_inputLen;
     int  m_cursorPos;          // NEW — index within m_inputBuffer
     bool m_awaitingNewInput;

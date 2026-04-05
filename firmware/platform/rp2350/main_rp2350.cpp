@@ -25,6 +25,8 @@ static constexpr int MAX_VISIBLE     = (HISTORY_AREA_H - ENTRY_H) / ENTRY_H;
 static constexpr int MAX_CHARS       = (SCREEN_W - MARGIN * 2) / CHAR_W;
 
 static const uint16_t COLOR_SEPARATOR = Display::rgb(70, 70, 90);
+static constexpr char SQRT_INSERT_TEXT[] = "sqrt()";
+static constexpr char PAREN_PAIR_TEXT[]  = "()";
 
 // ── History storage ──────────────────────────────────────────────────────────
 static constexpr int MAX_HISTORY = 20;
@@ -32,6 +34,7 @@ static constexpr int MAX_HISTORY = 20;
 struct HistoryEntry {
     char input[MAX_CHARS + 1];
     char result[32];
+    bool isError;
 };
 
 static HistoryEntry s_history[MAX_HISTORY];
@@ -52,12 +55,13 @@ static const HistoryEntry* getEntry(int index) {
     return &s_history[slot];
 }
 
-static void pushHistory(const char* input, const char* result) {
+static void pushHistory(const char* input, const char* result, bool isError) {
     int slot = s_historyCount % MAX_HISTORY;
     strncpy(s_history[slot].input,  input,  MAX_CHARS);
     strncpy(s_history[slot].result, result, 31);
     s_history[slot].input[MAX_CHARS] = '\0';
     s_history[slot].result[31]       = '\0';
+    s_history[slot].isError          = isError;
     s_historyCount++;
 }
 
@@ -67,6 +71,29 @@ static int getInputY() {
     int firstVisible = total - MAX_VISIBLE;
     if (firstVisible < 0) firstVisible = 0;
     return MARGIN + (total - firstVisible) * ENTRY_H;
+}
+
+static bool insertTextAtCursor(const char* text) {
+    const int insertLen = static_cast<int>(strlen(text));
+    if (s_len + insertLen > MAX_CHARS) {
+        return false;
+    }
+
+    memmove(&s_buf[s_cursor + insertLen],
+            &s_buf[s_cursor],
+            s_len - s_cursor + 1);
+    memcpy(&s_buf[s_cursor], text, insertLen);
+    s_len += insertLen;
+    s_cursor += insertLen;
+    return true;
+}
+
+static bool skipExistingCloseParen() {
+    if (s_cursor < s_len && s_buf[s_cursor] == ')') {
+        s_cursor++;
+        return true;
+    }
+    return false;
 }
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
@@ -111,7 +138,7 @@ static void redrawFull(DisplayRP2350& display) {
         int resultX = SCREEN_W - resultW - MARGIN;
         if (resultX < MARGIN) resultX = MARGIN;
         display.drawText(e->result, resultX, y + CHAR_H + 2,
-                         Display::GREEN, SCALE);
+                         e->isError ? Display::RED : Display::GREEN, SCALE);
     }
 
     int inputY = MARGIN + visibleCount * ENTRY_H;
@@ -209,13 +236,41 @@ int main() {
                         numBuf[31] = '\0';
                     }
 
-                    pushHistory(s_buf, numBuf);
+                    pushHistory(s_buf, numBuf, !result.ok);
 
                     s_len    = 0;
                     s_cursor = 0;                    
                     s_buf[0] = '\0';
 
                     redrawFull(display);
+                }
+            }
+
+            else if (k == Key::SQRT) {
+                if (insertTextAtCursor(SQRT_INSERT_TEXT)) {
+                    s_cursor--;
+                    redrawInputLine(display);
+                }
+            }
+
+            else if (k == Key::OPEN_PAREN) {
+                if (insertTextAtCursor(PAREN_PAIR_TEXT)) {
+                    s_cursor--;
+                    redrawInputLine(display);
+                }
+            }
+
+            else if (k == Key::CLOSE_PAREN) {
+                if (skipExistingCloseParen()) {
+                    redrawInputLine(display);
+                } else if (s_len < MAX_CHARS) {
+                    memmove(&s_buf[s_cursor + 1],
+                            &s_buf[s_cursor],
+                            s_len - s_cursor + 1);
+                    s_buf[s_cursor] = toChar(k);
+                    s_len++;
+                    s_cursor++;
+                    redrawInputLine(display);
                 }
             }
 

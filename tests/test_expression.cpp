@@ -125,6 +125,24 @@ TEST(PiConstant, NegativePi) {
     EXPECT_EVAL(pi_expr("-", "").c_str(), -3.14159265f);
 }
 
+TEST(SquareRoot, BasicSquareRoot) {
+    EXPECT_EVAL("sqrt(9)", 3.0f);
+}
+
+TEST(SquareRoot, NestedExpression) {
+    EXPECT_EVAL("sqrt(2*8)", 4.0f);
+}
+
+TEST(SquareRoot, ImplicitMultiplyBeforeFunction) {
+    EXPECT_EVAL("2sqrt(9)", 6.0f);
+}
+
+TEST(SquareRoot, DomainErrorForNegativeInput) {
+    ExprResult r = evaluate("sqrt(-1)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Square root domain error");
+}
+
 // ── Implicit multiplication tests (general) ───────────────────────────────────
 
 // These existed before but weren't explicitly tested

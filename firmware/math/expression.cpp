@@ -15,7 +15,8 @@ static bool canEndValue(TokenType type) {
 static bool canStartValue(TokenType type) {
     return type == TokenType::NUMBER ||
            type == TokenType::PAREN_OPEN ||
-           type == TokenType::OP_NEGATE;
+           type == TokenType::OP_NEGATE ||
+           type == TokenType::OP_SQRT;
 }
 
 
@@ -48,6 +49,20 @@ static int tokenize(const char* expr, Token* tokens) {
     while (i < len) {
         char c = expr[i];
         if (c == ' ') {i++; continue; }
+
+        if (strncmp(&expr[i], "sqrt", 4) == 0) {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+            if (count >= MAX_TOKENS) return -1;
+            tokens[count++] = { TokenType::OP_SQRT, 0.0f };
+            previousType     = TokenType::OP_SQRT;
+            hasPreviousToken = true;
+            expectUnary      = true;
+            i += 4;
+            continue;
+        }
 
         if ((unsigned char)c == 128) {
             if (hasPreviousToken && canEndValue(previousType)) {
@@ -154,7 +169,8 @@ static int precedence(TokenType type) {
         case TokenType::OP_MINUS: return 1;
         case TokenType::OP_MULTIPLY:
         case TokenType::OP_DIVIDE: return 2;
-        case TokenType::OP_NEGATE: return 3;
+        case TokenType::OP_NEGATE:
+        case TokenType::OP_SQRT: return 3;
         case TokenType::OP_POWER: return 4;
         default: return 0;
     }
@@ -166,11 +182,14 @@ static bool isOperator(TokenType type) {
             type == TokenType::OP_MULTIPLY  ||
             type == TokenType::OP_DIVIDE    ||
             type == TokenType::OP_POWER     ||
-            type == TokenType::OP_NEGATE;
+            type == TokenType::OP_NEGATE    ||
+            type == TokenType::OP_SQRT;
 }
 
 static bool isRightAssociative(TokenType type) {
-    return type == TokenType::OP_POWER || type == TokenType::OP_NEGATE;
+    return type == TokenType::OP_POWER ||
+           type == TokenType::OP_NEGATE ||
+           type == TokenType::OP_SQRT;
 }
 
 /**
@@ -275,6 +294,12 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
         } else if (token.type == TokenType::OP_NEGATE) {
             if (valTop < 1) return {false, 0, "Not enough operands"};
             valStack[valTop - 1] = -valStack[valTop - 1];
+        } else if (token.type == TokenType::OP_SQRT) {
+            if (valTop < 1) return {false, 0, "Not enough operands"};
+            if (valStack[valTop - 1] < 0.0f) {
+                return {false, 0, "Square root domain error"};
+            }
+            valStack[valTop - 1] = std::sqrt(valStack[valTop - 1]);
         } else if (isOperator(token.type)) {
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];

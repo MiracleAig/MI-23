@@ -12,23 +12,48 @@
 #include <cstring>
 
 // ── Button table ─────────────────────────────────────────────────────────────
-// PI_CHAR (128) is the π glyph slot in our custom font.
-// The label string uses "\x80" (byte 128) so it renders as π on the button.
 static constexpr char PI_LABEL[] = { (char)128, '\0' };
 
 const Button CalculatorApp::BUTTONS[BTN_ROWS][BTN_COLS] = {
-    { {"SIN", Key::SIN},  {"COS", Key::COS},  {"TAN", Key::TAN},  {PI_LABEL,      Key::PI}          },
-    { {"^",   Key::POWER},{"(",   Key::OPEN_PAREN}, {")", Key::CLOSE_PAREN}, {"/", Key::DIVIDE}      },
-    { {"7",   Key::NUM_7},{"8",   Key::NUM_8}, {"9",  Key::NUM_9}, {"*",           Key::MULTIPLY}     },
-    { {"4",   Key::NUM_4},{"5",   Key::NUM_5}, {"6",  Key::NUM_6}, {"-",           Key::MINUS}        },
-    { {"1",   Key::NUM_1},{"2",   Key::NUM_2}, {"3",  Key::NUM_3}, {"+",           Key::PLUS}         },
-    { {"0",   Key::NUM_0},{".",   Key::DOT},   {"CLR",Key::CLEAR}, {"ENT",         Key::ENTER}        },
+    { {"SIN", Key::SIN},  {"COS", Key::COS},  {"TAN", Key::TAN},  {"SQRT",        Key::SQRT}         },
+    { {PI_LABEL, Key::PI},{"^",   Key::POWER},{"(",   Key::OPEN_PAREN}, {")",      Key::CLOSE_PAREN} },
+    { {"7",   Key::NUM_7},{"8",   Key::NUM_8}, {"9",  Key::NUM_9}, {"/",           Key::DIVIDE}       },
+    { {"4",   Key::NUM_4},{"5",   Key::NUM_5}, {"6",  Key::NUM_6}, {"*",           Key::MULTIPLY}     },
+    { {"1",   Key::NUM_1},{"2",   Key::NUM_2}, {"3",  Key::NUM_3}, {"-",           Key::MINUS}        },
+    { {"0",   Key::NUM_0},{".",   Key::DOT},   {"+",  Key::PLUS},  {"CLR",         Key::CLEAR}        },
+    { {"ENT", Key::ENTER},{"",    Key::NONE},  {"",   Key::NONE},  {"",            Key::NONE}         },
 };
 
 static const uint16_t COLOR_BTN_NORMAL  = Display::rgb( 55,  55,  75);
 static const uint16_t COLOR_BTN_ACTION  = Display::rgb( 30,  90, 140); // ENT / CLR
 static const uint16_t COLOR_BTN_FN      = Display::rgb( 80,  50, 100); // SIN/COS/TAN/π
 static const uint16_t COLOR_BTN_TEXT    = Display::WHITE;
+static constexpr char SQRT_INSERT_TEXT[] = "sqrt()";
+static constexpr char PAREN_PAIR_TEXT[]  = "()";
+
+static bool insertTextAtCursor(char* buffer, int capacity, int& length,
+                               int& cursorPos, const char* text) {
+    const int insertLen = static_cast<int>(strlen(text));
+    if (length + insertLen >= capacity) {
+        return false;
+    }
+
+    memmove(&buffer[cursorPos + insertLen],
+            &buffer[cursorPos],
+            length - cursorPos + 1);
+    memcpy(&buffer[cursorPos], text, insertLen);
+    length += insertLen;
+    cursorPos += insertLen;
+    return true;
+}
+
+static bool skipExistingCloseParen(const char* buffer, int length, int& cursorPos) {
+    if (cursorPos < length && buffer[cursorPos] == ')') {
+        cursorPos++;
+        return true;
+    }
+    return false;
+}
 
 
 CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
@@ -36,6 +61,7 @@ CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
     , m_keypad(keypad)
     , m_inputBuffer{}
     , m_resultBuffer{}
+    , m_resultIsError(false)
     , m_inputLen(0)
     , m_cursorPos(0)
     , m_awaitingNewInput(false)
@@ -126,6 +152,7 @@ void CalculatorApp::processKey(Key pressed) {
         m_cursorPos       = 0;
         m_inputBuffer[0]  = '\0';
         m_resultBuffer[0] = '\0';
+        m_resultIsError   = false;
         m_awaitingNewInput = false;
     }
 
@@ -145,6 +172,7 @@ void CalculatorApp::processKey(Key pressed) {
             m_inputLen--;
             m_cursorPos--;
             m_resultBuffer[0] = '\0';
+            m_resultIsError   = false;
         }
 
     } else if (pressed == Key::ENTER) {
@@ -153,14 +181,45 @@ void CalculatorApp::processKey(Key pressed) {
             if (result.ok) {
                 snprintf(m_resultBuffer, sizeof(m_resultBuffer),
                          "%.6g", result.value);
+                m_resultIsError = false;
             } else {
                 snprintf(m_resultBuffer, sizeof(m_resultBuffer),
                          "%s", result.error);
+                m_resultIsError = true;
             }
             m_awaitingNewInput = true;
             pushHistory();
         }
 
+    } else if (pressed == Key::SQRT) {
+        if (m_awaitingNewInput) {
+            m_inputLen         = 0;
+            m_cursorPos        = 0;
+            m_inputBuffer[0]   = '\0';
+            m_resultBuffer[0]  = '\0';
+            m_resultIsError    = false;
+            m_awaitingNewInput = false;
+        }
+
+        if (insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
+                               m_inputLen, m_cursorPos, SQRT_INSERT_TEXT)) {
+            m_cursorPos--;
+        }
+    } else if (pressed == Key::OPEN_PAREN) {
+        if (insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
+                               m_inputLen, m_cursorPos, PAREN_PAIR_TEXT)) {
+            m_cursorPos--;
+        }
+    } else if (pressed == Key::CLOSE_PAREN) {
+        if (!skipExistingCloseParen(m_inputBuffer, m_inputLen, m_cursorPos) &&
+            m_inputLen < 127) {
+            memmove(&m_inputBuffer[m_cursorPos + 1],
+                    &m_inputBuffer[m_cursorPos],
+                    m_inputLen - m_cursorPos + 1);
+            m_inputBuffer[m_cursorPos] = toChar(pressed);
+            m_inputLen++;
+            m_cursorPos++;
+        }
     } else if (isPrintable(pressed) && m_inputLen < 127) {
         // Insert character at cursor position (not just append)
         // First make room by shifting everything from cursorPos right by one
@@ -171,8 +230,9 @@ void CalculatorApp::processKey(Key pressed) {
         m_inputLen++;
         m_cursorPos++;
 
-    } else if (pressed == Key::SIN || pressed == Key::COS || pressed == Key::TAN) {
-        // Trig stubs — not yet parsed, but show the label so the user
+    } else if (pressed == Key::SIN || pressed == Key::COS ||
+               pressed == Key::TAN) {
+        // Function-key stubs — not yet parsed, but show the label so the user
         // can see the key is registered. Will be wired to parser in Phase 3.
     }
 }
@@ -183,7 +243,7 @@ void CalculatorApp::pushHistory() {
         static_cast<int>(m_history.size()) - VISIBLE_HISTORY_COUNT);
     bool wasNearBottom = (m_historyScroll >= std::max(0, maxScrollBefore - 1));
 
-    m_history.push_back({m_inputBuffer, m_resultBuffer});
+    m_history.push_back({m_inputBuffer, m_resultBuffer, m_resultIsError});
 
     if (wasNearBottom) {
         m_historyScroll = std::max(0,
@@ -194,6 +254,7 @@ void CalculatorApp::pushHistory() {
     m_cursorPos       = 0;
     m_inputBuffer[0]  = '\0';
     m_resultBuffer[0] = '\0';
+    m_resultIsError   = false;
 }
 
 void CalculatorApp::clampScroll() {
@@ -238,7 +299,7 @@ void CalculatorApp::drawHistory() {
                       - MARGIN;
         if (resultX < 0) resultX = 0;
         m_display.drawText(m_history[i].result.c_str(), resultX, y + 8,
-                           Display::GREEN);
+                           m_history[i].isError ? Display::RED : Display::GREEN);
     }
 
     int maxScroll = std::max(0,
@@ -264,7 +325,8 @@ void CalculatorApp::drawInputRow() {
     int resultX = DISPLAY_WIDTH
                   - Display::textWidth(m_resultBuffer) - MARGIN;
     if (resultX < 0) resultX = 0;
-    m_display.drawText(m_resultBuffer, resultX, inputY + 10, Display::GREEN);
+    m_display.drawText(m_resultBuffer, resultX, inputY + 10,
+                       m_resultIsError ? Display::RED : Display::GREEN);
 
     drawCursor(inputY);
 }
@@ -306,8 +368,8 @@ void CalculatorApp::drawButtonGrid() {
 
 
             uint16_t bgColor;
-            if (row == 0) {
-                bgColor = COLOR_BTN_FN;       // SIN / COS / TAN / π
+            if (row <= 1) {
+                bgColor = COLOR_BTN_FN;       // function row plus π / power / parens
             } else if (btn.key == Key::ENTER || btn.key == Key::CLEAR) {
                 bgColor = COLOR_BTN_ACTION;   // ENT / CLR stand out
             } else {
