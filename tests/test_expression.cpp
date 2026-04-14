@@ -30,6 +30,13 @@ static std::string pi_expr(const char* before, const char* after) {
     return s;
 }
 
+static std::string unicode_pi_expr(const char* before, const char* after) {
+    std::string s = before;
+    s += "\xCF\x80";  // UTF-8 π
+    s += after;
+    return s;
+}
+
 // ── Original tests (unchanged) ────────────────────────────────────────────────
 
 TEST(ExpressionParser, BasicAddition) {
@@ -125,6 +132,18 @@ TEST(PiConstant, NegativePi) {
     EXPECT_EVAL(pi_expr("-", "").c_str(), -3.14159265f);
 }
 
+TEST(PiConstant, AsciiPi) {
+    EXPECT_EVAL("pi", 3.14159265f);
+}
+
+TEST(PiConstant, UppercaseAsciiPi) {
+    EXPECT_EVAL("PI", 3.14159265f);
+}
+
+TEST(PiConstant, UnicodePi) {
+    EXPECT_EVAL(unicode_pi_expr("", "").c_str(), 3.14159265f);
+}
+
 TEST(SquareRoot, BasicSquareRoot) {
     EXPECT_EVAL("sqrt(9)", 3.0f);
 }
@@ -141,6 +160,116 @@ TEST(SquareRoot, DomainErrorForNegativeInput) {
     ExprResult r = evaluate("sqrt(-1)");
     EXPECT_FALSE(r.ok);
     EXPECT_STREQ(r.error, "Square root domain error");
+}
+
+TEST(TrigFunctions, SineOfZero) {
+    EXPECT_EVAL("sin(0)", 0.0f);
+}
+
+TEST(TrigFunctions, SineOfPiWithoutParentheses) {
+    EXPECT_EVAL(pi_expr("sin", "").c_str(), 0.0f);
+}
+
+TEST(TrigFunctions, SineOfAsciiPiWithoutParentheses) {
+    EXPECT_EVAL("sin pi", 0.0f);
+}
+
+TEST(TrigFunctions, SineOfAsciiPiInParentheses) {
+    EXPECT_EVAL("sin(pi)", 0.0f);
+}
+
+TEST(TrigFunctions, CosineOfZero) {
+    EXPECT_EVAL("cos(0)", 1.0f);
+}
+
+TEST(TrigFunctions, TangentOfZero) {
+    EXPECT_EVAL("tan(0)", 0.0f);
+}
+
+TEST(TrigFunctions, CotangentOfPiOverFour) {
+    EXPECT_EVAL(pi_expr("cot(", "/4)").c_str(), 1.0f);
+}
+
+TEST(TrigFunctions, SecantOfZero) {
+    EXPECT_EVAL("sec(0)", 1.0f);
+}
+
+TEST(TrigFunctions, CosecantOfPiOverTwo) {
+    EXPECT_EVAL(pi_expr("csc(", "/2)").c_str(), 1.0f);
+}
+
+TEST(TrigFunctions, InverseSine) {
+    EXPECT_EVAL("asin(1)", 3.14159265f / 2.0f);
+}
+
+TEST(TrigFunctions, InverseCosine) {
+    EXPECT_EVAL("acos(1)", 0.0f);
+}
+
+TEST(TrigFunctions, InverseTangent) {
+    EXPECT_EVAL("atan(1)", 3.14159265f / 4.0f);
+}
+
+TEST(TrigFunctions, InverseCotangent) {
+    EXPECT_EVAL("acot(1)", 3.14159265f / 4.0f);
+}
+
+TEST(TrigFunctions, InverseSecant) {
+    EXPECT_EVAL("asec(2)", 3.14159265f / 3.0f);
+}
+
+TEST(TrigFunctions, InverseCosecant) {
+    EXPECT_EVAL("acsc(2)", 3.14159265f / 6.0f);
+}
+
+TEST(TrigFunctions, ImplicitMultiplyBeforeTrigFunction) {
+    EXPECT_EVAL(pi_expr("2sin(", ")").c_str(), 0.0f);
+}
+
+TEST(TrigFunctions, NestedTrigExpression) {
+    EXPECT_EVAL("sin(acos(0))", 1.0f);
+}
+
+TEST(TrigFunctions, CotangentDomainError) {
+    ExprResult r = evaluate("cot(0)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Cotangent domain error");
+}
+
+TEST(TrigFunctions, SecantDomainError) {
+    ExprResult r = evaluate(pi_expr("sec(", "/2)").c_str());
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Secant domain error");
+}
+
+TEST(TrigFunctions, CosecantDomainError) {
+    ExprResult r = evaluate("csc(0)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Cosecant domain error");
+}
+
+TEST(TrigFunctions, ArcsineDomainError) {
+    ExprResult r = evaluate("asin(2)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Arcsine domain error");
+}
+
+TEST(TrigFunctions, ArccosineDomainError) {
+    ExprResult r = evaluate("acos(-2)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Arccosine domain error");
+}
+
+TEST(TrigFunctions, ArcsecantDomainError) {
+    ExprResult r = evaluate("asec(0.5)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Arcsecant domain error");
+}
+
+TEST(TrigFunctions, ArccosecantDomainError) {
+    ExprResult r = evaluate("acsc(0.5)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Arccosecant domain error");
 }
 
 // ── Implicit multiplication tests (general) ───────────────────────────────────
@@ -170,6 +299,15 @@ TEST(KeyEnum, PiNotCollidingWithActionKeys) {
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::SIN));
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::COS));
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::TAN));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::COT));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::SEC));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::CSC));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ASIN));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ACOS));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ATAN));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ACOT));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ASEC));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ACSC));
 }
 
 // PI must be considered printable
@@ -187,6 +325,15 @@ TEST(KeyEnum, ActionKeysNotPrintable) {
     EXPECT_FALSE(isPrintable(Key::SIN));
     EXPECT_FALSE(isPrintable(Key::COS));
     EXPECT_FALSE(isPrintable(Key::TAN));
+    EXPECT_FALSE(isPrintable(Key::COT));
+    EXPECT_FALSE(isPrintable(Key::SEC));
+    EXPECT_FALSE(isPrintable(Key::CSC));
+    EXPECT_FALSE(isPrintable(Key::ASIN));
+    EXPECT_FALSE(isPrintable(Key::ACOS));
+    EXPECT_FALSE(isPrintable(Key::ATAN));
+    EXPECT_FALSE(isPrintable(Key::ACOT));
+    EXPECT_FALSE(isPrintable(Key::ASEC));
+    EXPECT_FALSE(isPrintable(Key::ACSC));
     EXPECT_FALSE(isPrintable(Key::NONE));
 }
 

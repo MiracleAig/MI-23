@@ -23,8 +23,8 @@ static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
 static const uint16_t COLOR_SCROLLBAR_BG = Display::rgb(40, 40, 50);
 
 // ── Button grid layout ───────────────────────────────────────────────────────
-static constexpr int BTN_COLS      = 4;
-static constexpr int BTN_ROWS      = 7;
+static constexpr int BTN_COLS      = 6;
+static constexpr int BTN_ROWS      = 6;
 static constexpr int BTN_MARGIN    = 4;   // gap between buttons in pixels
 static constexpr int BTN_AREA_TOP  = 102; // y where the button grid starts
 static constexpr int BTN_AREA_H    = DISPLAY_HEIGHT - BTN_AREA_TOP - 2;

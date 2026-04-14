@@ -15,21 +15,38 @@
 static constexpr char PI_LABEL[] = { (char)128, '\0' };
 
 const Button CalculatorApp::BUTTONS[BTN_ROWS][BTN_COLS] = {
-    { {"SIN", Key::SIN},  {"COS", Key::COS},  {"TAN", Key::TAN},  {"SQRT",        Key::SQRT}         },
-    { {PI_LABEL, Key::PI},{"^",   Key::POWER},{"(",   Key::OPEN_PAREN}, {")",      Key::CLOSE_PAREN} },
-    { {"7",   Key::NUM_7},{"8",   Key::NUM_8}, {"9",  Key::NUM_9}, {"/",           Key::DIVIDE}       },
-    { {"4",   Key::NUM_4},{"5",   Key::NUM_5}, {"6",  Key::NUM_6}, {"*",           Key::MULTIPLY}     },
-    { {"1",   Key::NUM_1},{"2",   Key::NUM_2}, {"3",  Key::NUM_3}, {"-",           Key::MINUS}        },
-    { {"0",   Key::NUM_0},{".",   Key::DOT},   {"+",  Key::PLUS},  {"CLR",         Key::CLEAR}        },
-    { {"ENT", Key::ENTER},{"",    Key::NONE},  {"",   Key::NONE},  {"",            Key::NONE}         },
+    { {"sin", Key::SIN},  {"cos", Key::COS},  {"tan", Key::TAN},  {"cot", Key::COT},  {"sec", Key::SEC},  {"csc", Key::CSC} },
+    { {"asin", Key::ASIN},{"acos", Key::ACOS},{"atan", Key::ATAN},{"acot", Key::ACOT},{"asec", Key::ASEC},{"acsc", Key::ACSC} },
+    { {"sqrt", Key::SQRT},{PI_LABEL, Key::PI},{"^",   Key::POWER},{"(",   Key::OPEN_PAREN}, {")", Key::CLOSE_PAREN}, {"CLR", Key::CLEAR} },
+    { {"7",   Key::NUM_7},{"8",   Key::NUM_8}, {"9",  Key::NUM_9}, {"/",   Key::DIVIDE}, {"4", Key::NUM_4}, {"5", Key::NUM_5} },
+    { {"6",   Key::NUM_6},{"*",   Key::MULTIPLY}, {"1", Key::NUM_1}, {"2", Key::NUM_2}, {"3", Key::NUM_3}, {"-", Key::MINUS} },
+    { {"0",   Key::NUM_0},{".",   Key::DOT},   {"+",  Key::PLUS},  {"ENT", Key::ENTER}, {"", Key::NONE}, {"", Key::NONE} },
 };
 
 static const uint16_t COLOR_BTN_NORMAL  = Display::rgb( 55,  55,  75);
 static const uint16_t COLOR_BTN_ACTION  = Display::rgb( 30,  90, 140); // ENT / CLR
 static const uint16_t COLOR_BTN_FN      = Display::rgb( 80,  50, 100); // SIN/COS/TAN/π
 static const uint16_t COLOR_BTN_TEXT    = Display::WHITE;
-static constexpr char SQRT_INSERT_TEXT[] = "sqrt()";
 static constexpr char PAREN_PAIR_TEXT[]  = "()";
+
+static const char* functionInsertText(Key key) {
+    switch (key) {
+        case Key::SQRT: return "sqrt()";
+        case Key::SIN:  return "sin()";
+        case Key::COS:  return "cos()";
+        case Key::TAN:  return "tan()";
+        case Key::COT:  return "cot()";
+        case Key::SEC:  return "sec()";
+        case Key::CSC:  return "csc()";
+        case Key::ASIN: return "asin()";
+        case Key::ACOS: return "acos()";
+        case Key::ATAN: return "atan()";
+        case Key::ACOT: return "acot()";
+        case Key::ASEC: return "asec()";
+        case Key::ACSC: return "acsc()";
+        default: return nullptr;
+    }
+}
 
 static bool insertTextAtCursor(char* buffer, int capacity, int& length,
                                int& cursorPos, const char* text) {
@@ -53,6 +70,21 @@ static bool skipExistingCloseParen(const char* buffer, int length, int& cursorPo
         return true;
     }
     return false;
+}
+
+static void clearInputAfterResult(char* inputBuffer, int& inputLen, int& cursorPos,
+                                  char* resultBuffer, bool& resultIsError,
+                                  bool& awaitingNewInput) {
+    if (!awaitingNewInput) {
+        return;
+    }
+
+    inputLen = 0;
+    cursorPos = 0;
+    inputBuffer[0] = '\0';
+    resultBuffer[0] = '\0';
+    resultIsError = false;
+    awaitingNewInput = false;
 }
 
 
@@ -191,18 +223,14 @@ void CalculatorApp::processKey(Key pressed) {
             pushHistory();
         }
 
-    } else if (pressed == Key::SQRT) {
-        if (m_awaitingNewInput) {
-            m_inputLen         = 0;
-            m_cursorPos        = 0;
-            m_inputBuffer[0]   = '\0';
-            m_resultBuffer[0]  = '\0';
-            m_resultIsError    = false;
-            m_awaitingNewInput = false;
-        }
+    } else if (functionInsertText(pressed) != nullptr) {
+        clearInputAfterResult(m_inputBuffer, m_inputLen, m_cursorPos,
+                              m_resultBuffer, m_resultIsError,
+                              m_awaitingNewInput);
 
+        const char* insertText = functionInsertText(pressed);
         if (insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
-                               m_inputLen, m_cursorPos, SQRT_INSERT_TEXT)) {
+                               m_inputLen, m_cursorPos, insertText)) {
             m_cursorPos--;
         }
     } else if (pressed == Key::OPEN_PAREN) {
@@ -229,11 +257,6 @@ void CalculatorApp::processKey(Key pressed) {
         m_inputBuffer[m_cursorPos] = toChar(pressed);
         m_inputLen++;
         m_cursorPos++;
-
-    } else if (pressed == Key::SIN || pressed == Key::COS ||
-               pressed == Key::TAN) {
-        // Function-key stubs — not yet parsed, but show the label so the user
-        // can see the key is registered. Will be wired to parser in Phase 3.
     }
 }
 
@@ -368,7 +391,7 @@ void CalculatorApp::drawButtonGrid() {
 
 
             uint16_t bgColor;
-            if (row <= 1) {
+            if (row <= 2) {
                 bgColor = COLOR_BTN_FN;       // function row plus π / power / parens
             } else if (btn.key == Key::ENTER || btn.key == Key::CLEAR) {
                 bgColor = COLOR_BTN_ACTION;   // ENT / CLR stand out

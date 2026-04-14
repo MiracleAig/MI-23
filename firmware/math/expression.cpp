@@ -4,9 +4,163 @@
 
 #include "math/expression.h"
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 
+namespace {
+
+constexpr float PI = 3.14159265f;
+constexpr float EPSILON = 1e-6f;
+
+struct FunctionSpec {
+    const char* name;
+    int length;
+    TokenType type;
+};
+
+constexpr FunctionSpec FUNCTION_SPECS[] = {
+    {"sqrt", 4, TokenType::OP_SQRT},
+    {"asin", 4, TokenType::OP_ASIN},
+    {"acos", 4, TokenType::OP_ACOS},
+    {"atan", 4, TokenType::OP_ATAN},
+    {"acot", 4, TokenType::OP_ACOT},
+    {"asec", 4, TokenType::OP_ASEC},
+    {"acsc", 4, TokenType::OP_ACSC},
+    {"sin", 3, TokenType::OP_SIN},
+    {"cos", 3, TokenType::OP_COS},
+    {"tan", 3, TokenType::OP_TAN},
+    {"cot", 3, TokenType::OP_COT},
+    {"sec", 3, TokenType::OP_SEC},
+    {"csc", 3, TokenType::OP_CSC},
+};
+
+static bool isUnaryFunction(TokenType type) {
+    switch (type) {
+        case TokenType::OP_NEGATE:
+        case TokenType::OP_SQRT:
+        case TokenType::OP_SIN:
+        case TokenType::OP_COS:
+        case TokenType::OP_TAN:
+        case TokenType::OP_COT:
+        case TokenType::OP_SEC:
+        case TokenType::OP_CSC:
+        case TokenType::OP_ASIN:
+        case TokenType::OP_ACOS:
+        case TokenType::OP_ATAN:
+        case TokenType::OP_ACOT:
+        case TokenType::OP_ASEC:
+        case TokenType::OP_ACSC:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool matchFunction(const char* expr, int len, int index,
+                          TokenType& type, int& matchLength) {
+    for (const FunctionSpec& spec : FUNCTION_SPECS) {
+        if (index + spec.length > len) {
+            continue;
+        }
+        if (strncmp(&expr[index], spec.name, spec.length) == 0) {
+            type = spec.type;
+            matchLength = spec.length;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool matchPiConstant(const char* expr, int len, int index, int& matchLength) {
+    const unsigned char c = static_cast<unsigned char>(expr[index]);
+    if (c == 128) {
+        matchLength = 1;
+        return true;
+    }
+    if (index + 2 <= len &&
+        (expr[index] == 'p' || expr[index] == 'P') &&
+        (expr[index + 1] == 'i' || expr[index + 1] == 'I')) {
+        matchLength = 2;
+        return true;
+    }
+    if (index + 2 <= len &&
+        static_cast<unsigned char>(expr[index]) == 0xCF &&
+        static_cast<unsigned char>(expr[index + 1]) == 0x80) {
+        matchLength = 2;
+        return true;
+    }
+    return false;
+}
+
+static float zeroTinyValue(float value) {
+    return std::fabs(value) < EPSILON ? 0.0f : value;
+}
+
+static ExprResult evalUnary(TokenType type, float value) {
+    switch (type) {
+        case TokenType::OP_NEGATE:
+            return {true, -value, nullptr};
+        case TokenType::OP_SQRT:
+            if (value < 0.0f) {
+                return {false, 0, "Square root domain error"};
+            }
+            return {true, std::sqrt(value), nullptr};
+        case TokenType::OP_SIN:
+            return {true, zeroTinyValue(std::sin(value)), nullptr};
+        case TokenType::OP_COS:
+            return {true, zeroTinyValue(std::cos(value)), nullptr};
+        case TokenType::OP_TAN:
+            return {true, zeroTinyValue(std::tan(value)), nullptr};
+        case TokenType::OP_COT: {
+            const float sine = std::sin(value);
+            if (std::fabs(sine) < EPSILON) {
+                return {false, 0, "Cotangent domain error"};
+            }
+            return {true, std::cos(value) / sine, nullptr};
+        }
+        case TokenType::OP_SEC: {
+            const float cosine = std::cos(value);
+            if (std::fabs(cosine) < EPSILON) {
+                return {false, 0, "Secant domain error"};
+            }
+            return {true, 1.0f / cosine, nullptr};
+        }
+        case TokenType::OP_CSC: {
+            const float sine = std::sin(value);
+            if (std::fabs(sine) < EPSILON) {
+                return {false, 0, "Cosecant domain error"};
+            }
+            return {true, 1.0f / sine, nullptr};
+        }
+        case TokenType::OP_ASIN:
+            if (value < -1.0f || value > 1.0f) {
+                return {false, 0, "Arcsine domain error"};
+            }
+            return {true, std::asin(value), nullptr};
+        case TokenType::OP_ACOS:
+            if (value < -1.0f || value > 1.0f) {
+                return {false, 0, "Arccosine domain error"};
+            }
+            return {true, std::acos(value), nullptr};
+        case TokenType::OP_ATAN:
+            return {true, std::atan(value), nullptr};
+        case TokenType::OP_ACOT:
+            return {true, std::atan2(1.0f, value), nullptr};
+        case TokenType::OP_ASEC:
+            if (std::fabs(value) < 1.0f) {
+                return {false, 0, "Arcsecant domain error"};
+            }
+            return {true, std::acos(1.0f / value), nullptr};
+        case TokenType::OP_ACSC:
+            if (std::fabs(value) < 1.0f) {
+                return {false, 0, "Arccosecant domain error"};
+            }
+            return {true, std::asin(1.0f / value), nullptr};
+        default:
+            return {false, 0, "Invalid expression"};
+    }
+}
+
+} // namespace
 
 static bool canEndValue(TokenType type) {
     return type == TokenType::NUMBER || type == TokenType::PAREN_CLOSE;
@@ -15,8 +169,7 @@ static bool canEndValue(TokenType type) {
 static bool canStartValue(TokenType type) {
     return type == TokenType::NUMBER ||
            type == TokenType::PAREN_OPEN ||
-           type == TokenType::OP_NEGATE ||
-           type == TokenType::OP_SQRT;
+           isUnaryFunction(type);
 }
 
 
@@ -50,31 +203,34 @@ static int tokenize(const char* expr, Token* tokens) {
         char c = expr[i];
         if (c == ' ') {i++; continue; }
 
-        if (strncmp(&expr[i], "sqrt", 4) == 0) {
+        TokenType functionType;
+        int functionLength = 0;
+        if (matchFunction(expr, len, i, functionType, functionLength)) {
             if (hasPreviousToken && canEndValue(previousType)) {
                 if (count >= MAX_TOKENS) return -1;
                 tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
             }
             if (count >= MAX_TOKENS) return -1;
-            tokens[count++] = { TokenType::OP_SQRT, 0.0f };
-            previousType     = TokenType::OP_SQRT;
+            tokens[count++] = { functionType, 0.0f };
+            previousType     = functionType;
             hasPreviousToken = true;
             expectUnary      = true;
-            i += 4;
+            i += functionLength;
             continue;
         }
 
-        if ((unsigned char)c == 128) {
+        int piLength = 0;
+        if (matchPiConstant(expr, len, i, piLength)) {
             if (hasPreviousToken && canEndValue(previousType)) {
                 if (count >= MAX_TOKENS) return -1;
                 tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
             }
             if (count >= MAX_TOKENS) return -1;
-            tokens[count++] = { TokenType::NUMBER, 3.14159265f };
+            tokens[count++] = { TokenType::NUMBER, PI };
             previousType     = TokenType::NUMBER;
             hasPreviousToken = true;
             expectUnary      = false;
-            i++;
+            i += piLength;
             continue;
         }
 
@@ -157,10 +313,6 @@ static int tokenize(const char* expr, Token* tokens) {
             return -1;
         }
     }
-    printf("Token dump (%d tokens) :\n", count);
-    for (int i = 0; i < count; i++) {
-        printf(" [%d] type=%d value%.6f\n", i, (int)tokens[i].type, tokens[i].value);
-    }
     return count;
 }
 static int precedence(TokenType type) {
@@ -170,7 +322,20 @@ static int precedence(TokenType type) {
         case TokenType::OP_MULTIPLY:
         case TokenType::OP_DIVIDE: return 2;
         case TokenType::OP_NEGATE:
-        case TokenType::OP_SQRT: return 3;
+        case TokenType::OP_SQRT:
+        case TokenType::OP_SIN:
+        case TokenType::OP_COS:
+        case TokenType::OP_TAN:
+        case TokenType::OP_COT:
+        case TokenType::OP_SEC:
+        case TokenType::OP_CSC:
+        case TokenType::OP_ASIN:
+        case TokenType::OP_ACOS:
+        case TokenType::OP_ATAN:
+        case TokenType::OP_ACOT:
+        case TokenType::OP_ASEC:
+        case TokenType::OP_ACSC:
+            return 3;
         case TokenType::OP_POWER: return 4;
         default: return 0;
     }
@@ -182,14 +347,12 @@ static bool isOperator(TokenType type) {
             type == TokenType::OP_MULTIPLY  ||
             type == TokenType::OP_DIVIDE    ||
             type == TokenType::OP_POWER     ||
-            type == TokenType::OP_NEGATE    ||
-            type == TokenType::OP_SQRT;
+            isUnaryFunction(type);
 }
 
 static bool isRightAssociative(TokenType type) {
     return type == TokenType::OP_POWER ||
-           type == TokenType::OP_NEGATE ||
-           type == TokenType::OP_SQRT;
+           isUnaryFunction(type);
 }
 
 /**
@@ -291,15 +454,13 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
         if (token.type == TokenType::NUMBER) {
             if (valTop >= MAX_STACK) return {false, 0, "Stack overflow"};
             valStack[valTop++] = token.value;
-        } else if (token.type == TokenType::OP_NEGATE) {
+        } else if (isUnaryFunction(token.type)) {
             if (valTop < 1) return {false, 0, "Not enough operands"};
-            valStack[valTop - 1] = -valStack[valTop - 1];
-        } else if (token.type == TokenType::OP_SQRT) {
-            if (valTop < 1) return {false, 0, "Not enough operands"};
-            if (valStack[valTop - 1] < 0.0f) {
-                return {false, 0, "Square root domain error"};
+            const ExprResult unaryResult = evalUnary(token.type, valStack[valTop - 1]);
+            if (!unaryResult.ok) {
+                return unaryResult;
             }
-            valStack[valTop - 1] = std::sqrt(valStack[valTop - 1]);
+            valStack[valTop - 1] = unaryResult.value;
         } else if (isOperator(token.type)) {
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];
@@ -344,18 +505,10 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
  */
 ExprResult evaluate(const char* expr) {
 
-    printf("evaluate bytes: ");
-    for (int i = 0; expr[i] != '\0' || i == 0; i++) {
-        if (expr[i] == '\0') { printf("(null terminator)"); break; }
-        printf("%d ", (unsigned char)expr[i]);
-    }
-    printf("\n");
-
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];
 
     int infixCount = tokenize(expr, infix);
-    printf("Tokenizer produced %d tokens\n", infixCount);
     if (infixCount < 0) return {false, 0, "Invalid expression"};
     if (infixCount == 0) return {false, 0, "Empty expression"};
 
