@@ -18,9 +18,10 @@ const Button CalculatorApp::BUTTONS[BTN_ROWS][BTN_COLS] = {
     { {"sin", Key::SIN},  {"cos", Key::COS},  {"tan", Key::TAN},  {"cot", Key::COT},  {"sec", Key::SEC},  {"csc", Key::CSC} },
     { {"asin", Key::ASIN},{"acos", Key::ACOS},{"atan", Key::ATAN},{"acot", Key::ACOT},{"asec", Key::ASEC},{"acsc", Key::ACSC} },
     { {"sqrt", Key::SQRT},{PI_LABEL, Key::PI},{"^",   Key::POWER},{"(",   Key::OPEN_PAREN}, {")", Key::CLOSE_PAREN}, {"CLR", Key::CLEAR} },
-    { {"7",   Key::NUM_7},{"8",   Key::NUM_8}, {"9",  Key::NUM_9}, {"/",   Key::DIVIDE}, {"4", Key::NUM_4}, {"5", Key::NUM_5} },
-    { {"6",   Key::NUM_6},{"*",   Key::MULTIPLY}, {"1", Key::NUM_1}, {"2", Key::NUM_2}, {"3", Key::NUM_3}, {"-", Key::MINUS} },
-    { {"0",   Key::NUM_0},{".",   Key::DOT},   {"+",  Key::PLUS},  {"ENT", Key::ENTER}, {"", Key::NONE}, {"", Key::NONE} },
+    { {"7",   Key::NUM_7},{"8",   Key::NUM_8},{"9",   Key::NUM_9},{"/",   Key::DIVIDE},   {"",    Key::NONE}, {"", Key::NONE} },
+    { {"4",   Key::NUM_4},{"5",   Key::NUM_5},{"6",   Key::NUM_6},{"*",   Key::MULTIPLY}, {"",    Key::NONE}, {"", Key::NONE} },
+    { {"1",   Key::NUM_1},{"2",   Key::NUM_2},{"3",   Key::NUM_3},{"-",   Key::MINUS},    {"",    Key::NONE}, {"", Key::NONE} },
+    { {"0",   Key::NUM_0},{".",   Key::DOT},  {"+",   Key::PLUS}, {"ENT", Key::ENTER},    {"",    Key::NONE}, {"", Key::NONE} },
 };
 
 static const uint16_t COLOR_BTN_NORMAL  = Display::rgb( 55,  55,  75);
