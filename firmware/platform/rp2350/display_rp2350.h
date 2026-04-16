@@ -4,7 +4,7 @@
 
 #pragma once
 #include "hal/display.h"
-#include "../drivers/st7789.h"
+#include "../../drivers/st7789/st7789.h"
 #include "hardware/spi.h"
 
 class DisplayRP2350 : public Display {

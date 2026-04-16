@@ -37,6 +37,15 @@ enum class Key {
    COS         = 0x89,
    TAN         = 0x8A,
    SQRT        = 0x8B,
+   COT         = 0x8C,
+   SEC         = 0x8D,
+   CSC         = 0x8E,
+   ASIN        = 0x8F,
+   ACOS        = 0x90,
+   ATAN        = 0x91,
+   ACOT        = 0x92,
+   ASEC        = 0x93,
+   ACSC        = 0x94,
    // Custom font characters
    PI          = 0xFF,
 };
@@ -60,4 +69,3 @@ public:
     // Returns Key::NONE if nothing is being pressed
     virtual Key getKey() = 0;
 };
-

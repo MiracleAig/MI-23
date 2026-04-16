@@ -7,9 +7,20 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "================================"
-echo "  MI-23 Build System"
-echo "================================"
+cat << 'EOF'
+
+ /$$      /$$ /$$$$$$       /$$$$$$   /$$$$$$
+| $$$    /$$$|_  $$_/      /$$__  $$ /$$__  $$
+| $$$$  /$$$$  | $$       |__/  \ $$|__/  \ $$
+| $$ $$/$$ $$  | $$ /$$$$$$ /$$$$$$/   /$$$$$/
+| $$  $$$| $$  | $$|______//$$____/   |___  $$
+| $$\  $ | $$  | $$       | $$       /$$  \ $$
+| $$ \/  | $$ /$$$$$$     | $$$$$$$$|  $$$$$$/
+|__/     |__/|______/     |________/ \______/
+
+             MI-23 BUILD SYSTEM
+             
+EOF
 
 # Parse arguments
 CLEAN=false
@@ -61,6 +72,13 @@ else
     BUILD_DIR="$PROJECT_DIR/build-$PLATFORM"
 fi
 
+HOST_BINARY="$BUILD_DIR/firmware/platform/host/sdl_simulator/mi23"
+HOST_TEST_DIR="$BUILD_DIR/tests"
+RP2350_OUTPUT_DIR="$BUILD_DIR/firmware/platform/rp2350"
+RP2350_UF2="$RP2350_OUTPUT_DIR/mi23.uf2"
+RP2350_ELF="$RP2350_OUTPUT_DIR/mi23.elf"
+RP2350_BIN="$RP2350_OUTPUT_DIR/mi23.bin"
+
 # Clean if requested
 if [ "$CLEAN" = true ]; then
     echo "Cleaning $BUILD_DIR..."
@@ -93,12 +111,17 @@ cmake --build "$BUILD_DIR" -- -j$(nproc)
 
 # ── Release post-processing ──────────────────────────────────────────────────
 if [ "$RELEASE" = true ]; then
-    BINARY="$BUILD_DIR/mi23"
+    BINARY="$HOST_BINARY"
 
     # Check that strip is available — it ships with binutils which is
     # always present on Fedora, but worth a clear error if somehow missing
     if ! command -v strip &> /dev/null; then
         echo "Error: 'strip' not found. Install binutils: sudo dnf install binutils"
+        exit 1
+    fi
+
+    if [ ! -f "$BINARY" ]; then
+        echo "Error: release binary not found at $BINARY"
         exit 1
     fi
 
@@ -131,14 +154,20 @@ echo "================================"
 echo "  Build successful!"
 echo "================================"
 
+if [ "$PLATFORM" = "rp2350" ]; then
+    echo ""
+    echo "RP2350 outputs:"
+    echo "  UF2: $RP2350_UF2"
+    echo "  ELF: $RP2350_ELF"
+    echo "  BIN: $RP2350_BIN"
+fi
+
 # Run tests if --test was passed
 if [ "$RUN_TESTS" = true ]; then
     echo ""
     echo "Running unit tests..."
     echo "--------------------------------"
-    cd "$BUILD_DIR"
-    ctest --output-on-failure
-    cd "$PROJECT_DIR"
+    ctest --test-dir "$HOST_TEST_DIR" --output-on-failure
 fi
 
 # Launch simulator if --run was passed
@@ -148,6 +177,6 @@ if [ "$RUN_AFTER" = true ]; then
     else
         echo ""
         echo "Launching simulator..."
-        "$BUILD_DIR/mi23"
+        "$HOST_BINARY"
     fi
 fi

@@ -42,6 +42,10 @@
 
 # Build output
 build/
+build-host/
+build-rp2350/
+cmake-build-debug/
+compile_commands.json
 
 # CMake generated files
 CMakeCache.txt

@@ -8,4 +8,5 @@
 struct HistoryEntry {
     std::string input;
     std::string result;
+    bool isError;
 };
