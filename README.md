@@ -7,11 +7,12 @@
 ## Features
 
 - Arithmetic expression evaluation with correct operator precedence
-- Exponent and negative number support
-- Scrolling calculation history
-- Blinking text cursor
 - Dual-platform codebase — runs as a desktop simulator (SDL2) and on real hardware (RP2350)
-
+- Modular HAL (Hardware Abstraction Layer) architecture for easy platform extension
+- Unit tested expression parser using Google Test framework
+- Support for decimal numbers and parentheses in expressions
+- Real-time expression rendering and error handling
+- Static and dynamic SDL2 linking options for release and debug builds
 ## Hardware
 
 | Part | Details |
@@ -60,7 +61,7 @@ cd MI-23
 cmake -B build-host -DPLATFORM=host
 cmake --build build-host
 
-./build-host/mi23
+./build-host/firmware/platform/host/sdl_simulator/mi23
 ```
 
 ### Controls

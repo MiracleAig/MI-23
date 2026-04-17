@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "app/history.h"
+#include "history.h"
 #include "platform/host/display_sdl.h"
 #include "platform/host/keypad_host.h"
 #include <vector>

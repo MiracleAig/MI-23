@@ -4,7 +4,7 @@
 
 #include "platform/host/display_sdl.h"
 #include "platform/host/keypad_host.h"
-#include "app/calculator_app.h"
+#include "app/calculator/calculator_app.h"
 #include <cstdio>
 
 int main() {

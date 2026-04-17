@@ -12,9 +12,9 @@ if(PLATFORM STREQUAL "host")
     )
 
     add_library(calculator_app STATIC
-            app/calculator_app.cpp
-            app/calculator_app.h
-            app/history.h
+            app/calculator/calculator_app.cpp
+            app/calculator/calculator_app.h
+            app/calculator/history.h
             graphics/font.h
             hal/display.h
             hal/keypad.h
