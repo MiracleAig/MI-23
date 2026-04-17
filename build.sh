@@ -135,7 +135,7 @@ if [ "$RELEASE" = true ]; then
 
     # Copy the finished binary to the project root so it's easy to find
     # and attach to a GitHub release
-    cp "$BINARY" "$PROJECT_DIR/mi23-linux-x86_64"
+    cp "$BINARY" "$PROJECT_DIR/mi23-linux-x86_64"fi#!/bin/bash
 
     echo ""
     echo "================================"
