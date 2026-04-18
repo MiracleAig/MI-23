@@ -14,6 +14,8 @@ enum class TokenType {
     OP_MINUS,
     OP_MULTIPLY,
     OP_DIVIDE,
+    OP_PERCENT,
+    OP_FACTORIAL,
     OP_POWER,
     OP_NEGATE,
     OP_SQRT,
@@ -29,6 +31,10 @@ enum class TokenType {
     OP_ASEC,
     OP_ACOT,
     OP_ACSC,
+    OP_LOG,
+    OP_LN,
+    OP_ROOT,
+    COMMA,
     PAREN_OPEN,
     PAREN_CLOSE,
 };
@@ -45,3 +51,4 @@ struct ExprResult {
 };
 
 ExprResult evaluate(const char* expr);
+ExprResult evaluate(const char* expr, float ansValue);

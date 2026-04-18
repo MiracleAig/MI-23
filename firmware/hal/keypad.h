@@ -18,9 +18,12 @@ enum class Key {
    EQUALS      = 0x3D,
    OPEN_PAREN  = 0x28,
    CLOSE_PAREN = 0x29,
+   COMMA       = 0x2C,
    DOT         = 0x2E,
    POWER       = 0x5E,
    PERCENT     = 0x25,
+   FACTORIAL   = 0x21,
+   E_CONST     = 0x65,
    // Action keys — above 0x80 so they never collide with printable ASCII
    ENTER       = 0x80,
    CLEAR       = 0x81,
@@ -46,8 +49,13 @@ enum class Key {
    ACOT        = 0x92,
    ASEC        = 0x93,
    ACSC        = 0x94,
+   LOG         = 0x95,
+   LN          = 0x96,
+   ANS         = 0x97,
+   ROOT        = 0x98,
    // Custom font characters
    PI          = 0xFF,
+
 };
 
 inline bool isPrintable(Key k) {

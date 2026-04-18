@@ -5,6 +5,7 @@
 #pragma once
 
 #include "history.h"
+#include "math/math_typeset.h"
 #include "platform/host/display_sdl.h"
 #include "platform/host/keypad_host.h"
 #include <vector>
@@ -14,9 +15,6 @@ static constexpr int ROW_HEIGHT   = 20;
 static constexpr int HISTORY_TOP  = 4;
 static constexpr int HISTORY_BOTTOM = 100;
 static constexpr int HISTORY_HEIGHT = HISTORY_BOTTOM - HISTORY_TOP;
-static constexpr int VISIBLE_HISTORY_ROWS  = HISTORY_HEIGHT / ROW_HEIGHT;
-static constexpr int VISIBLE_HISTORY_COUNT =
-    (VISIBLE_HISTORY_ROWS - 1 > 0) ? VISIBLE_HISTORY_ROWS - 1 : 0;
 
 static const uint16_t COLOR_HISTORY_BG   = Display::rgb(10, 10, 18);
 static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
@@ -52,6 +50,7 @@ private:
     char m_inputBuffer[128];
     char m_resultBuffer[64];
     bool m_resultIsError;
+    float m_lastAnswer;
     int  m_inputLen;
     int  m_cursorPos;          // NEW — index within m_inputBuffer
     int  m_inputViewportX;
@@ -69,8 +68,10 @@ private:
 
     void drawHistory();
     void drawInputRow();
-    void drawCursor(int inputY);
-    void drawScrollbar(int maxScroll);
+    void drawCursor(int originX, int baselineY, float expressionScale,
+                    const math_typeset::LayoutMetrics& metrics,
+                    bool usedMathLayout);
+    void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();
 
     // Maps grid position (col, row) to pixel rect top-left

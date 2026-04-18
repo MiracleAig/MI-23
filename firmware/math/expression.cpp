@@ -9,6 +9,7 @@
 namespace {
 
 constexpr float PI = 3.14159265f;
+constexpr float EULER = 2.71828183f;
 constexpr float EPSILON = 1e-6f;
 
 struct FunctionSpec {
@@ -19,6 +20,7 @@ struct FunctionSpec {
 
 constexpr FunctionSpec FUNCTION_SPECS[] = {
     {"sqrt", 4, TokenType::OP_SQRT},
+    {"root", 4, TokenType::OP_ROOT},
     {"asin", 4, TokenType::OP_ASIN},
     {"acos", 4, TokenType::OP_ACOS},
     {"atan", 4, TokenType::OP_ATAN},
@@ -31,6 +33,8 @@ constexpr FunctionSpec FUNCTION_SPECS[] = {
     {"cot", 3, TokenType::OP_COT},
     {"sec", 3, TokenType::OP_SEC},
     {"csc", 3, TokenType::OP_CSC},
+    {"log", 3, TokenType::OP_LOG},
+    {"ln", 2, TokenType::OP_LN},
 };
 
 static bool isUnaryFunction(TokenType type) {
@@ -49,6 +53,7 @@ static bool isUnaryFunction(TokenType type) {
         case TokenType::OP_ACOT:
         case TokenType::OP_ASEC:
         case TokenType::OP_ACSC:
+        case TokenType::OP_LN:
             return true;
         default:
             return false;
@@ -91,8 +96,48 @@ static bool matchPiConstant(const char* expr, int len, int index, int& matchLeng
     return false;
 }
 
+static bool matchEulerConstant(const char* expr, int len, int index, int& matchLength) {
+    if (index < len && (expr[index] == 'e' || expr[index] == 'E')) {
+        matchLength = 1;
+        return true;
+    }
+    return false;
+}
+
+static bool matchAnsConstant(const char* expr, int len, int index, int& matchLength) {
+    if (index + 3 <= len &&
+        (expr[index] == 'a' || expr[index] == 'A') &&
+        (expr[index + 1] == 'n' || expr[index + 1] == 'N') &&
+        (expr[index + 2] == 's' || expr[index + 2] == 'S')) {
+        matchLength = 3;
+        return true;
+    }
+    return false;
+}
+
 static float zeroTinyValue(float value) {
     return std::fabs(value) < EPSILON ? 0.0f : value;
+}
+
+static ExprResult evalFactorial(float value) {
+    if (value < 0.0f) {
+        return {false, 0, "Factorial domain error"};
+    }
+
+    const float rounded = std::round(value);
+    if (std::fabs(value - rounded) > EPSILON) {
+        return {false, 0, "Factorial domain error"};
+    }
+
+    const int n = static_cast<int>(rounded);
+    float result = 1.0f;
+    for (int i = 2; i <= n; ++i) {
+        result *= static_cast<float>(i);
+        if (!std::isfinite(result)) {
+            return {false, 0, "Factorial overflow"};
+        }
+    }
+    return {true, result, nullptr};
 }
 
 static ExprResult evalUnary(TokenType type, float value) {
@@ -155,6 +200,11 @@ static ExprResult evalUnary(TokenType type, float value) {
                 return {false, 0, "Arccosecant domain error"};
             }
             return {true, std::asin(1.0f / value), nullptr};
+        case TokenType::OP_LN:
+            if (value <= 0.0f) {
+                return {false, 0, "Natural log domain error"};
+            }
+            return {true, std::log(value), nullptr};
         default:
             return {false, 0, "Invalid expression"};
     }
@@ -163,7 +213,10 @@ static ExprResult evalUnary(TokenType type, float value) {
 } // namespace
 
 static bool canEndValue(TokenType type) {
-    return type == TokenType::NUMBER || type == TokenType::PAREN_CLOSE;
+    return type == TokenType::NUMBER ||
+           type == TokenType::PAREN_CLOSE ||
+           type == TokenType::OP_PERCENT ||
+           type == TokenType::OP_FACTORIAL;
 }
 
 static bool canStartValue(TokenType type) {
@@ -190,7 +243,7 @@ static bool canStartValue(TokenType type) {
  *         Returns -1 if an error occurs, such as encountering an unsupported character
  *         or exceeding the size of the tokens array.
  */
-static int tokenize(const char* expr, Token* tokens) {
+static int tokenize(const char* expr, Token* tokens, float ansValue) {
     int count = 0;
     int i = 0;
     int len = strlen(expr);
@@ -231,6 +284,36 @@ static int tokenize(const char* expr, Token* tokens) {
             hasPreviousToken = true;
             expectUnary      = false;
             i += piLength;
+            continue;
+        }
+
+        int eLength = 0;
+        if (matchEulerConstant(expr, len, i, eLength)) {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+            if (count >= MAX_TOKENS) return -1;
+            tokens[count++] = { TokenType::NUMBER, EULER };
+            previousType     = TokenType::NUMBER;
+            hasPreviousToken = true;
+            expectUnary      = false;
+            i += eLength;
+            continue;
+        }
+
+        int ansLength = 0;
+        if (matchAnsConstant(expr, len, i, ansLength)) {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+            if (count >= MAX_TOKENS) return -1;
+            tokens[count++] = { TokenType::NUMBER, ansValue };
+            previousType     = TokenType::NUMBER;
+            hasPreviousToken = true;
+            expectUnary      = false;
+            i += ansLength;
             continue;
         }
 
@@ -282,12 +365,20 @@ static int tokenize(const char* expr, Token* tokens) {
                 case '-': type = expectUnary ? TokenType::OP_NEGATE : TokenType::OP_MINUS; break;
                 case '*': type = TokenType::OP_MULTIPLY; break;
                 case '/': type = TokenType::OP_DIVIDE;   break;
+                case '%': type = TokenType::OP_PERCENT;  break;
+                case '!': type = TokenType::OP_FACTORIAL; break;
                 case '^': type = TokenType::OP_POWER;    break;
+                case ',': type = TokenType::COMMA;       break;
                 case '(': type = TokenType::PAREN_OPEN;  break;
                 case ')': type = TokenType::PAREN_CLOSE; break;
                 case '=': return count;
                 default:
                     return -1;
+            }
+
+            if ((type == TokenType::OP_PERCENT || type == TokenType::OP_FACTORIAL) &&
+                (!hasPreviousToken || !canEndValue(previousType))) {
+                return -1;
             }
 
             if (hasPreviousToken && canEndValue(previousType) && canStartValue(type)) {
@@ -302,11 +393,7 @@ static int tokenize(const char* expr, Token* tokens) {
             previousType = type;
             hasPreviousToken = true;
 
-            if (type == TokenType::PAREN_CLOSE) {
-                expectUnary = false;
-            } else {
-                expectUnary = true;
-            }
+            expectUnary = !canEndValue(type);
         }
 
         if (count >= MAX_STACK) {
@@ -321,6 +408,8 @@ static int precedence(TokenType type) {
         case TokenType::OP_MINUS: return 1;
         case TokenType::OP_MULTIPLY:
         case TokenType::OP_DIVIDE: return 2;
+        case TokenType::OP_PERCENT:
+        case TokenType::OP_FACTORIAL: return 5;
         case TokenType::OP_NEGATE:
         case TokenType::OP_SQRT:
         case TokenType::OP_SIN:
@@ -335,7 +424,10 @@ static int precedence(TokenType type) {
         case TokenType::OP_ACOT:
         case TokenType::OP_ASEC:
         case TokenType::OP_ACSC:
+        case TokenType::OP_LN:
             return 3;
+        case TokenType::OP_LOG:
+        case TokenType::OP_ROOT: return 4;
         case TokenType::OP_POWER: return 4;
         default: return 0;
     }
@@ -346,6 +438,10 @@ static bool isOperator(TokenType type) {
             type == TokenType::OP_MINUS     ||
             type == TokenType::OP_MULTIPLY  ||
             type == TokenType::OP_DIVIDE    ||
+            type == TokenType::OP_PERCENT   ||
+            type == TokenType::OP_FACTORIAL ||
+            type == TokenType::OP_LOG       ||
+            type == TokenType::OP_ROOT      ||
             type == TokenType::OP_POWER     ||
             isUnaryFunction(type);
 }
@@ -353,6 +449,12 @@ static bool isOperator(TokenType type) {
 static bool isRightAssociative(TokenType type) {
     return type == TokenType::OP_POWER ||
            isUnaryFunction(type);
+}
+
+static bool isUnaryEvalOperator(TokenType type) {
+    return isUnaryFunction(type) ||
+           type == TokenType::OP_PERCENT ||
+           type == TokenType::OP_FACTORIAL;
 }
 
 /**
@@ -400,6 +502,18 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
             }
             if (opTop >= MAX_STACK) { return -1; }
             opStack[opTop++] = token;
+        } else if (token.type == TokenType::COMMA) {
+            bool foundParen = false;
+            while (opTop > 0) {
+                Token top = opStack[opTop - 1];
+                if (top.type == TokenType::PAREN_OPEN) {
+                    foundParen = true;
+                    break;
+                }
+                if (outCount >= MAX_TOKENS) { return -1; }
+                postfix[outCount++] = opStack[--opTop];
+            }
+            if (!foundParen) { return -1; }
         } else if (token.type == TokenType::PAREN_OPEN) {
             if (opTop >= MAX_STACK) { return -1; }
             opStack[opTop++] = token;
@@ -454,13 +568,23 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
         if (token.type == TokenType::NUMBER) {
             if (valTop >= MAX_STACK) return {false, 0, "Stack overflow"};
             valStack[valTop++] = token.value;
-        } else if (isUnaryFunction(token.type)) {
+        } else if (isUnaryEvalOperator(token.type)) {
             if (valTop < 1) return {false, 0, "Not enough operands"};
-            const ExprResult unaryResult = evalUnary(token.type, valStack[valTop - 1]);
-            if (!unaryResult.ok) {
-                return unaryResult;
+            if (token.type == TokenType::OP_PERCENT) {
+                valStack[valTop - 1] /= 100.0f;
+            } else if (token.type == TokenType::OP_FACTORIAL) {
+                const ExprResult factorialResult = evalFactorial(valStack[valTop - 1]);
+                if (!factorialResult.ok) {
+                    return factorialResult;
+                }
+                valStack[valTop - 1] = factorialResult.value;
+            } else {
+                const ExprResult unaryResult = evalUnary(token.type, valStack[valTop - 1]);
+                if (!unaryResult.ok) {
+                    return unaryResult;
+                }
+                valStack[valTop - 1] = unaryResult.value;
             }
-            valStack[valTop - 1] = unaryResult.value;
         } else if (isOperator(token.type)) {
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];
@@ -478,6 +602,28 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
                 case TokenType::OP_POWER:
                     result = std::pow(a, b);
                     break;
+                case TokenType::OP_LOG:
+                    if (a <= 0.0f || a == 1.0f || b <= 0.0f) {
+                        return {false, 0, "Log domain error"};
+                    }
+                    result = std::log(b) / std::log(a);
+                    break;
+                case TokenType::OP_ROOT: {
+                    if (a == 0.0f) {
+                        return {false, 0, "Root domain error"};
+                    }
+                    if (b < 0.0f) {
+                        const float rounded = std::round(a);
+                        if (std::fabs(a - rounded) > EPSILON ||
+                            (static_cast<int>(std::fabs(rounded)) % 2) == 0) {
+                            return {false, 0, "Root domain error"};
+                        }
+                        result = -std::pow(-b, 1.0f / a);
+                    } else {
+                        result = std::pow(b, 1.0f / a);
+                    }
+                    break;
+                }
                 default: break;
             }
             valStack[valTop++] = result;
@@ -504,11 +650,15 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
  *         - 'error': A human-readable error message if 'ok' is false.
  */
 ExprResult evaluate(const char* expr) {
+    return evaluate(expr, 0.0f);
+}
+
+ExprResult evaluate(const char* expr, float ansValue) {
 
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];
 
-    int infixCount = tokenize(expr, infix);
+    int infixCount = tokenize(expr, infix, ansValue);
     if (infixCount < 0) return {false, 0, "Invalid expression"};
     if (infixCount == 0) return {false, 0, "Empty expression"};
 
