@@ -4,6 +4,7 @@
 
 #include "app/calculator/calculator_app.h"
 #include "math/expression.h"
+#include "math/math_typeset.h"
 #include "platform/host/display_sdl.h"
 #include "graphics/font.h"
 #include <SDL2/SDL.h>
@@ -315,8 +316,15 @@ void CalculatorApp::drawHistory() {
                                COLOR_SEPARATOR);
         }
 
-        m_display.drawText(m_history[i].input.c_str(), MARGIN, y,
-                           Display::WHITE);
+        const bool drewMath = math_typeset::draw(m_history[i].input.c_str(),
+                                                 m_display,
+                                                 MARGIN,
+                                                 y + (FONT_CHAR_HEIGHT - 1),
+                                                 Display::WHITE);
+        if (!drewMath) {
+            m_display.drawText(m_history[i].input.c_str(), MARGIN, y,
+                               Display::WHITE);
+        }
 
         int resultX = DISPLAY_WIDTH
                       - Display::textWidth(m_history[i].result.c_str())
@@ -344,7 +352,14 @@ void CalculatorApp::drawInputRow() {
                            COLOR_SEPARATOR);
     }
 
-    m_display.drawText(m_inputBuffer, MARGIN, inputY, Display::WHITE);
+    const bool drewMath = math_typeset::draw(m_inputBuffer,
+                                             m_display,
+                                             MARGIN,
+                                             inputY + (FONT_CHAR_HEIGHT - 1),
+                                             Display::WHITE);
+    if (!drewMath) {
+        m_display.drawText(m_inputBuffer, MARGIN, inputY, Display::WHITE);
+    }
 
     int resultX = DISPLAY_WIDTH
                   - Display::textWidth(m_resultBuffer) - MARGIN;
@@ -360,9 +375,20 @@ void CalculatorApp::drawCursor(int inputY) {
     if (!showCursor) return;
 
     // Cursor sits at cursorPos, not necessarily the end of the string
-    int cursorX = MARGIN + m_cursorPos * FONT_CHAR_ADVANCE;
+    const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
+    int cursorX = MARGIN + prefixWidth;
+
+    math_typeset::LayoutMetrics metrics{};
+    const bool hasMathMetrics = math_typeset::measure(m_inputBuffer, metrics);
+    const int cursorTop = hasMathMetrics
+        ? inputY + (FONT_CHAR_HEIGHT - 1) - metrics.ascent
+        : inputY;
+    const int cursorHeight = hasMathMetrics
+        ? std::max(FONT_CHAR_HEIGHT, metrics.ascent + metrics.descent)
+        : FONT_CHAR_HEIGHT;
+
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
-        m_display.drawRect(cursorX, inputY, 2, FONT_CHAR_HEIGHT, Display::WHITE);
+        m_display.drawRect(cursorX, cursorTop, 2, cursorHeight, Display::WHITE);
     }
 }
 
