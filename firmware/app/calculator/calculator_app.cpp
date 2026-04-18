@@ -4,6 +4,7 @@
 
 #include "app/calculator/calculator_app.h"
 #include "math/expression.h"
+#include "math/math_typeset.h"
 #include "platform/host/display_sdl.h"
 #include "graphics/font.h"
 #include <SDL2/SDL.h>
@@ -97,6 +98,7 @@ CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
     , m_resultIsError(false)
     , m_inputLen(0)
     , m_cursorPos(0)
+    , m_inputViewportX(0)
     , m_awaitingNewInput(false)
     , m_historyScroll(0)
     , m_injectedKey(Key::NONE)
@@ -121,13 +123,18 @@ void CalculatorApp::handleEvents() {
             m_historyScroll += (event.wheel.y > 0) ? -1 : 1;
         }
         if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_UP)   m_historyScroll--;
-            if (event.key.keysym.sym == SDLK_DOWN)  m_historyScroll++;
-            // Wire SDL left/right arrow keys to cursor movement
-            if (event.key.keysym.sym == SDLK_LEFT)
+            if (event.key.keysym.sym == SDLK_UP) {
+                m_injectedKey = Key::CURSOR_UP;
+            }
+            if (event.key.keysym.sym == SDLK_DOWN) {
+                m_injectedKey = Key::CURSOR_DOWN;
+            }
+            if (event.key.keysym.sym == SDLK_LEFT) {
                 m_injectedKey = Key::CURSOR_LEFT;
-            if (event.key.keysym.sym == SDLK_RIGHT)
+            }
+            if (event.key.keysym.sym == SDLK_RIGHT) {
                 m_injectedKey = Key::CURSOR_RIGHT;
+            }
         }
 
         // Mouse click — hit test against the button grid
@@ -187,13 +194,28 @@ void CalculatorApp::processKey(Key pressed) {
         m_resultBuffer[0] = '\0';
         m_resultIsError   = false;
         m_awaitingNewInput = false;
+        m_inputViewportX = 0;
     }
 
     if (pressed == Key::CURSOR_LEFT) {
-        if (m_cursorPos > 0) m_cursorPos--;
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Left);
 
     } else if (pressed == Key::CURSOR_RIGHT) {
-        if (m_cursorPos < m_inputLen) m_cursorPos++;
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Right);
+
+    } else if (pressed == Key::CURSOR_UP) {
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Up);
+
+    } else if (pressed == Key::CURSOR_DOWN) {
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Down);
 
     } else if (pressed == Key::CLEAR) {
         // Backspace at cursor position
@@ -279,6 +301,7 @@ void CalculatorApp::pushHistory() {
     m_inputBuffer[0]  = '\0';
     m_resultBuffer[0] = '\0';
     m_resultIsError   = false;
+    m_inputViewportX  = 0;
 }
 
 void CalculatorApp::clampScroll() {
@@ -315,8 +338,15 @@ void CalculatorApp::drawHistory() {
                                COLOR_SEPARATOR);
         }
 
-        m_display.drawText(m_history[i].input.c_str(), MARGIN, y,
-                           Display::WHITE);
+        const bool drewMath = math_typeset::draw(m_history[i].input.c_str(),
+                                                 m_display,
+                                                 MARGIN,
+                                                 y + (FONT_CHAR_HEIGHT - 1),
+                                                 Display::WHITE);
+        if (!drewMath) {
+            m_display.drawText(m_history[i].input.c_str(), MARGIN, y,
+                               Display::WHITE);
+        }
 
         int resultX = DISPLAY_WIDTH
                       - Display::textWidth(m_history[i].result.c_str())
@@ -344,7 +374,27 @@ void CalculatorApp::drawInputRow() {
                            COLOR_SEPARATOR);
     }
 
-    m_display.drawText(m_inputBuffer, MARGIN, inputY, Display::WHITE);
+    const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
+    const int viewportWidth = DISPLAY_WIDTH - MARGIN * 2;
+    if (prefixWidth - m_inputViewportX > viewportWidth - 8) {
+        m_inputViewportX = prefixWidth - (viewportWidth - 8);
+    }
+    if (prefixWidth - m_inputViewportX < 0) {
+        m_inputViewportX = prefixWidth;
+    }
+    if (m_inputViewportX < 0) {
+        m_inputViewportX = 0;
+    }
+
+    const int inputOriginX = MARGIN - m_inputViewportX;
+    const bool drewMath = math_typeset::draw(m_inputBuffer,
+                                             m_display,
+                                             inputOriginX,
+                                             inputY + (FONT_CHAR_HEIGHT - 1),
+                                             Display::WHITE);
+    if (!drewMath) {
+        m_display.drawText(m_inputBuffer, inputOriginX, inputY, Display::WHITE);
+    }
 
     int resultX = DISPLAY_WIDTH
                   - Display::textWidth(m_resultBuffer) - MARGIN;
@@ -360,9 +410,20 @@ void CalculatorApp::drawCursor(int inputY) {
     if (!showCursor) return;
 
     // Cursor sits at cursorPos, not necessarily the end of the string
-    int cursorX = MARGIN + m_cursorPos * FONT_CHAR_ADVANCE;
+    const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
+    int cursorX = MARGIN + prefixWidth - m_inputViewportX;
+
+    math_typeset::LayoutMetrics metrics{};
+    const bool hasMathMetrics = math_typeset::measure(m_inputBuffer, metrics);
+    const int cursorTop = hasMathMetrics
+        ? inputY + (FONT_CHAR_HEIGHT - 1) - metrics.ascent
+        : inputY;
+    const int cursorHeight = hasMathMetrics
+        ? std::max(FONT_CHAR_HEIGHT, metrics.ascent + metrics.descent)
+        : FONT_CHAR_HEIGHT;
+
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
-        m_display.drawRect(cursorX, inputY, 2, FONT_CHAR_HEIGHT, Display::WHITE);
+        m_display.drawRect(cursorX, cursorTop, 2, cursorHeight, Display::WHITE);
     }
 }
 

@@ -8,6 +8,7 @@ enable_testing()
 
 add_executable(mi23_tests
         test_expression.cpp
+        test_math_typeset.cpp
 )
 
 target_include_directories(mi23_tests
