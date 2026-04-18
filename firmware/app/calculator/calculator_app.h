@@ -54,6 +54,7 @@ private:
     bool m_resultIsError;
     int  m_inputLen;
     int  m_cursorPos;          // NEW — index within m_inputBuffer
+    int  m_inputViewportX;
     bool m_awaitingNewInput;
 
     std::vector<HistoryEntry> m_history;

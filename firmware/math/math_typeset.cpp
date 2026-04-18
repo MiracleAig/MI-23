@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstddef>
 #include <cstring>
 
 #include "graphics/font.h"
@@ -13,6 +12,7 @@ namespace {
 
 constexpr int MAX_NODES = 192;
 constexpr int MAX_ROW_CHILDREN = 320;
+constexpr int MAX_ROW_GAPS = 320;
 constexpr int FONT_ASCENT = FONT_CHAR_HEIGHT - 1;
 constexpr int FONT_DESCENT = 1;
 
@@ -33,9 +33,13 @@ struct Node {
 
     int childrenStart;
     int childrenCount;
+
+    int spanStart;
+    int spanEnd;
+    int opPos;
 };
 
-struct Context {
+struct ParseContext {
     const char* text;
     int length;
     int cursor;
@@ -47,11 +51,6 @@ struct Context {
     int rowChildCount;
 
     bool parseError;
-};
-
-struct ParsedExpression {
-    int root;
-    bool ok;
 };
 
 struct Box {
@@ -70,6 +69,10 @@ struct Box {
 
     int childrenStart;
     int childrenCount;
+    int gapStart;
+
+    int cachedSpanStart;
+    int cachedSpanEnd;
 };
 
 struct LayoutContext {
@@ -78,23 +81,25 @@ struct LayoutContext {
 
     int rowChildren[MAX_ROW_CHILDREN];
     int rowChildCount;
+    int rowGaps[MAX_ROW_GAPS];
+    int rowGapCount;
 
     bool layoutError;
 };
 
+struct ParsedRoot {
+    ParseContext parse;
+    int rootNode;
+    bool ok;
+};
+
 static bool isValueStart(char c) {
     const unsigned char uc = static_cast<unsigned char>(c);
-    return std::isdigit(static_cast<unsigned char>(c)) ||
-           std::isalpha(static_cast<unsigned char>(c)) ||
-           c == '(' || c == '.' || uc == 128;
+    return std::isdigit(uc) || std::isalpha(uc) || c == '(' || c == '.' || uc == 128;
 }
 
-static bool canAllocateNode(Context& ctx) {
-    return ctx.nodeCount < MAX_NODES;
-}
-
-static int addNode(Context& ctx, Node::Type type) {
-    if (!canAllocateNode(ctx)) {
+static int addNode(ParseContext& ctx, Node::Type type) {
+    if (ctx.nodeCount >= MAX_NODES) {
         ctx.parseError = true;
         return -1;
     }
@@ -108,28 +113,34 @@ static int addNode(Context& ctx, Node::Type type) {
         -1,
         0,
         0,
+        0,
+        0,
+        -1,
     };
     return index;
 }
 
-static int makeTextNode(Context& ctx, int start, int length) {
+static int makeTextNode(ParseContext& ctx, int start, int length) {
     const int index = addNode(ctx, Node::Type::Text);
     if (index < 0) {
         return -1;
     }
-    ctx.nodes[index].textStart = start;
-    ctx.nodes[index].textLength = length;
+
+    Node& node = ctx.nodes[index];
+    node.textStart = start;
+    node.textLength = length;
+    node.spanStart = start;
+    node.spanEnd = start + length;
     return index;
 }
 
-static int makeRowNode(Context& ctx, const int* children, int childCount) {
+static int makeRowNode(ParseContext& ctx, const int* children, int childCount) {
     if (childCount <= 0) {
         return -1;
     }
     if (childCount == 1) {
         return children[0];
     }
-
     if (ctx.rowChildCount + childCount > MAX_ROW_CHILDREN) {
         ctx.parseError = true;
         return -1;
@@ -140,30 +151,33 @@ static int makeRowNode(Context& ctx, const int* children, int childCount) {
         return -1;
     }
 
-    const int rowStart = ctx.rowChildCount;
+    const int start = ctx.rowChildCount;
     for (int i = 0; i < childCount; i++) {
         ctx.rowChildren[ctx.rowChildCount++] = children[i];
     }
 
-    ctx.nodes[index].childrenStart = rowStart;
-    ctx.nodes[index].childrenCount = childCount;
+    Node& row = ctx.nodes[index];
+    row.childrenStart = start;
+    row.childrenCount = childCount;
+    row.spanStart = ctx.nodes[children[0]].spanStart;
+    row.spanEnd = ctx.nodes[children[childCount - 1]].spanEnd;
     return index;
 }
 
-static void skipSpaces(Context& ctx) {
+static void skipSpaces(ParseContext& ctx) {
     while (ctx.cursor < ctx.length && ctx.text[ctx.cursor] == ' ') {
         ctx.cursor++;
     }
 }
 
-static bool atEnd(Context& ctx) {
+static bool atEnd(ParseContext& ctx) {
     skipSpaces(ctx);
     return ctx.cursor >= ctx.length;
 }
 
-static int parseExpression(Context& ctx);
+static int parseExpression(ParseContext& ctx);
 
-static int parsePrimary(Context& ctx) {
+static int parsePrimary(ParseContext& ctx) {
     skipSpaces(ctx);
     if (ctx.cursor >= ctx.length) {
         ctx.parseError = true;
@@ -174,6 +188,7 @@ static int parsePrimary(Context& ctx) {
     const char c = ctx.text[ctx.cursor];
 
     if (c == '(') {
+        const int openPos = ctx.cursor;
         ctx.cursor++;
         const int inner = parseExpression(ctx);
         skipSpaces(ctx);
@@ -181,14 +196,19 @@ static int parsePrimary(Context& ctx) {
             ctx.parseError = true;
             return -1;
         }
+        const int closePos = ctx.cursor;
         ctx.cursor++;
 
-        const int group = addNode(ctx, Node::Type::Parenthesized);
-        if (group < 0) {
+        const int nodeIndex = addNode(ctx, Node::Type::Parenthesized);
+        if (nodeIndex < 0) {
             return -1;
         }
-        ctx.nodes[group].left = inner;
-        return group;
+
+        Node& node = ctx.nodes[nodeIndex];
+        node.left = inner;
+        node.spanStart = openPos;
+        node.spanEnd = closePos + 1;
+        return nodeIndex;
     }
 
     if (std::isdigit(static_cast<unsigned char>(c)) || c == '.') {
@@ -214,10 +234,7 @@ static int parsePrimary(Context& ctx) {
     if (c == '+' || c == '-') {
         ctx.cursor++;
         const int rhs = parsePrimary(ctx);
-        int children[2] = {
-            makeTextNode(ctx, start, 1),
-            rhs,
-        };
+        int children[2] = { makeTextNode(ctx, start, 1), rhs };
         return makeRowNode(ctx, children, 2);
     }
 
@@ -225,27 +242,35 @@ static int parsePrimary(Context& ctx) {
     return -1;
 }
 
-static int parsePower(Context& ctx) {
+static int parsePower(ParseContext& ctx) {
     int base = parsePrimary(ctx);
     skipSpaces(ctx);
 
     if (ctx.cursor < ctx.length && ctx.text[ctx.cursor] == '^') {
+        const int opPos = ctx.cursor;
         ctx.cursor++;
-        int exponent = parsePower(ctx);
-        const int node = addNode(ctx, Node::Type::Superscript);
-        if (node < 0) {
+        const int exponent = parsePower(ctx);
+
+        const int nodeIndex = addNode(ctx, Node::Type::Superscript);
+        if (nodeIndex < 0) {
             return -1;
         }
-        ctx.nodes[node].left = base;
-        ctx.nodes[node].right = exponent;
-        return node;
+
+        Node& node = ctx.nodes[nodeIndex];
+        node.left = base;
+        node.right = exponent;
+        node.opPos = opPos;
+        node.spanStart = ctx.nodes[base].spanStart;
+        node.spanEnd = ctx.nodes[exponent].spanEnd;
+        return nodeIndex;
     }
 
     return base;
 }
 
-static int parseTerm(Context& ctx) {
+static int parseTerm(ParseContext& ctx) {
     int lhs = parsePower(ctx);
+
     while (!ctx.parseError) {
         skipSpaces(ctx);
         if (ctx.cursor >= ctx.length) {
@@ -254,30 +279,37 @@ static int parseTerm(Context& ctx) {
 
         const char c = ctx.text[ctx.cursor];
         if (c == '*') {
+            const int opPos = ctx.cursor;
             ctx.cursor++;
             const int rhs = parsePower(ctx);
-            const int op = makeTextNode(ctx, ctx.cursor - 1, 1);
-            int children[3] = { lhs, op, rhs };
+            const int op = makeTextNode(ctx, opPos, 1);
+            int children[3] = {lhs, op, rhs};
             lhs = makeRowNode(ctx, children, 3);
             continue;
         }
 
         if (c == '/') {
+            const int opPos = ctx.cursor;
             ctx.cursor++;
             const int rhs = parsePower(ctx);
+
             const int fraction = addNode(ctx, Node::Type::Fraction);
             if (fraction < 0) {
                 return -1;
             }
-            ctx.nodes[fraction].left = lhs;
-            ctx.nodes[fraction].right = rhs;
+            Node& node = ctx.nodes[fraction];
+            node.left = lhs;
+            node.right = rhs;
+            node.opPos = opPos;
+            node.spanStart = ctx.nodes[lhs].spanStart;
+            node.spanEnd = ctx.nodes[rhs].spanEnd;
             lhs = fraction;
             continue;
         }
 
         if (isValueStart(c)) {
             const int rhs = parsePower(ctx);
-            int children[2] = { lhs, rhs };
+            int children[2] = {lhs, rhs};
             lhs = makeRowNode(ctx, children, 2);
             continue;
         }
@@ -288,8 +320,9 @@ static int parseTerm(Context& ctx) {
     return lhs;
 }
 
-static int parseExpression(Context& ctx) {
+static int parseExpression(ParseContext& ctx) {
     int lhs = parseTerm(ctx);
+
     while (!ctx.parseError) {
         skipSpaces(ctx);
         if (ctx.cursor >= ctx.length) {
@@ -305,29 +338,79 @@ static int parseExpression(Context& ctx) {
         ctx.cursor++;
         const int rhs = parseTerm(ctx);
         const int op = makeTextNode(ctx, opStart, 1);
-        int children[3] = { lhs, op, rhs };
+        int children[3] = {lhs, op, rhs};
         lhs = makeRowNode(ctx, children, 3);
     }
 
     return lhs;
 }
 
-static bool canAllocateBox(LayoutContext& layout) {
-    return layout.boxCount < MAX_NODES;
+static ParsedRoot parse(const char* expression) {
+    ParsedRoot parsed{};
+    parsed.parse.text = expression;
+    parsed.parse.length = static_cast<int>(std::strlen(expression));
+
+    if (parsed.parse.length == 0) {
+        parsed.ok = false;
+        return parsed;
+    }
+
+    parsed.rootNode = parseExpression(parsed.parse);
+    parsed.ok = !parsed.parse.parseError && parsed.rootNode >= 0 && atEnd(parsed.parse);
+    return parsed;
 }
 
-static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& layout);
+static bool isOperatorText(const ParseContext& parseCtx, int nodeIndex) {
+    const Node& node = parseCtx.nodes[nodeIndex];
+    if (node.type != Node::Type::Text || node.textLength != 1) {
+        return false;
+    }
 
-static int addBox(LayoutContext& layout, Box::Type type) {
-    if (!canAllocateBox(layout)) {
+    const char c = parseCtx.text[node.textStart];
+    return c == '+' || c == '-' || c == '*' || c == '/';
+}
+
+static int interAtomGap(const ParseContext& parseCtx, int leftNode, int rightNode) {
+    const Node::Type leftType = parseCtx.nodes[leftNode].type;
+    const Node::Type rightType = parseCtx.nodes[rightNode].type;
+
+    if (isOperatorText(parseCtx, leftNode) || isOperatorText(parseCtx, rightNode)) {
+        return 1;
+    }
+
+    if (leftType == Node::Type::Fraction || rightType == Node::Type::Fraction) {
+        return 2;
+    }
+
+    if (leftType == Node::Type::Parenthesized || rightType == Node::Type::Parenthesized) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int addBox(LayoutContext& layout, Box::Type type, int spanStart, int spanEnd) {
+    if (layout.boxCount >= MAX_NODES) {
         layout.layoutError = true;
         return -1;
     }
 
     const int index = layout.boxCount++;
-    layout.boxes[index] = Box{type, {0, 0, 0}, -1, -1, 0, 0};
+    layout.boxes[index] = Box{
+        type,
+        {0, 0, 0},
+        -1,
+        -1,
+        0,
+        0,
+        0,
+        spanStart,
+        spanEnd,
+    };
     return index;
 }
+
+static int layoutNode(const ParseContext& parseCtx, int nodeIndex, LayoutContext& layout);
 
 static LayoutMetrics textMetrics(int length) {
     if (length <= 0) {
@@ -336,7 +419,7 @@ static LayoutMetrics textMetrics(int length) {
     return {length * FONT_CHAR_ADVANCE, FONT_ASCENT, FONT_DESCENT};
 }
 
-static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& layout) {
+static int layoutNode(const ParseContext& parseCtx, int nodeIndex, LayoutContext& layout) {
     if (nodeIndex < 0 || nodeIndex >= parseCtx.nodeCount) {
         layout.layoutError = true;
         return -1;
@@ -345,7 +428,7 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
     const Node& node = parseCtx.nodes[nodeIndex];
 
     if (node.type == Node::Type::Text) {
-        const int box = addBox(layout, Box::Type::Glyph);
+        const int box = addBox(layout, Box::Type::Glyph, node.spanStart, node.spanEnd);
         if (box < 0) {
             return -1;
         }
@@ -354,35 +437,50 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
     }
 
     if (node.type == Node::Type::Row) {
-        const int box = addBox(layout, Box::Type::Row);
+        const int box = addBox(layout, Box::Type::Row, node.spanStart, node.spanEnd);
         if (box < 0) {
             return -1;
         }
 
         const int childStart = layout.rowChildCount;
+        const int gapStart = layout.rowGapCount;
         int width = 0;
         int ascent = 0;
         int descent = 0;
 
         for (int i = 0; i < node.childrenCount; i++) {
-            const int childNodeIndex = parseCtx.rowChildren[node.childrenStart + i];
-            const int childBox = layoutNode(parseCtx, childNodeIndex, layout);
+            const int childNode = parseCtx.rowChildren[node.childrenStart + i];
+            const int childBox = layoutNode(parseCtx, childNode, layout);
             if (childBox < 0) {
                 return -1;
             }
+
             if (layout.rowChildCount >= MAX_ROW_CHILDREN) {
                 layout.layoutError = true;
                 return -1;
             }
             layout.rowChildren[layout.rowChildCount++] = childBox;
+
             const LayoutMetrics childMetrics = layout.boxes[childBox].metrics;
             width += childMetrics.width;
             ascent = std::max(ascent, childMetrics.ascent);
             descent = std::max(descent, childMetrics.descent);
+
+            if (i < node.childrenCount - 1) {
+                if (layout.rowGapCount >= MAX_ROW_GAPS) {
+                    layout.layoutError = true;
+                    return -1;
+                }
+                const int nextNode = parseCtx.rowChildren[node.childrenStart + i + 1];
+                const int gap = interAtomGap(parseCtx, childNode, nextNode);
+                layout.rowGaps[layout.rowGapCount++] = gap;
+                width += gap;
+            }
         }
 
         layout.boxes[box].childrenStart = childStart;
         layout.boxes[box].childrenCount = node.childrenCount;
+        layout.boxes[box].gapStart = gapStart;
         layout.boxes[box].metrics = {width, ascent, descent};
         return box;
     }
@@ -391,23 +489,23 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
         const int numerator = layoutNode(parseCtx, node.left, layout);
         const int denominator = layoutNode(parseCtx, node.right, layout);
 
-        const int box = addBox(layout, Box::Type::Fraction);
+        const int box = addBox(layout, Box::Type::Fraction, node.spanStart, node.spanEnd);
         if (box < 0) {
             return -1;
         }
 
-        const LayoutMetrics numeratorMetrics = layout.boxes[numerator].metrics;
-        const LayoutMetrics denominatorMetrics = layout.boxes[denominator].metrics;
-        const int numeratorHeight = numeratorMetrics.ascent + numeratorMetrics.descent;
-        const int denominatorHeight = denominatorMetrics.ascent + denominatorMetrics.descent;
-        const int barWidth = std::max(numeratorMetrics.width, denominatorMetrics.width) + 2;
+        const LayoutMetrics numMetrics = layout.boxes[numerator].metrics;
+        const LayoutMetrics denMetrics = layout.boxes[denominator].metrics;
+        const int numHeight = numMetrics.ascent + numMetrics.descent;
+        const int denHeight = denMetrics.ascent + denMetrics.descent;
+        const int barWidth = std::max(numMetrics.width, denMetrics.width) + 4;
 
         layout.boxes[box].left = numerator;
         layout.boxes[box].right = denominator;
         layout.boxes[box].metrics = {
             barWidth,
-            numeratorHeight + 1,
-            1 + denominatorHeight,
+            numHeight + 2,
+            2 + denHeight,
         };
         return box;
     }
@@ -416,7 +514,7 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
         const int base = layoutNode(parseCtx, node.left, layout);
         const int exponent = layoutNode(parseCtx, node.right, layout);
 
-        const int box = addBox(layout, Box::Type::Superscript);
+        const int box = addBox(layout, Box::Type::Superscript, node.spanStart, node.spanEnd);
         if (box < 0) {
             return -1;
         }
@@ -438,16 +536,16 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
     if (node.type == Node::Type::Parenthesized) {
         const int inner = layoutNode(parseCtx, node.left, layout);
 
-        const int box = addBox(layout, Box::Type::Parenthesized);
+        const int box = addBox(layout, Box::Type::Parenthesized, node.spanStart, node.spanEnd);
         if (box < 0) {
             return -1;
         }
 
         const LayoutMetrics innerMetrics = layout.boxes[inner].metrics;
-        const int parenWidth = FONT_CHAR_ADVANCE;
+        const int delimiterWidth = FONT_CHAR_ADVANCE;
         layout.boxes[box].left = inner;
         layout.boxes[box].metrics = {
-            innerMetrics.width + parenWidth * 2,
+            innerMetrics.width + delimiterWidth * 2,
             std::max(innerMetrics.ascent, FONT_ASCENT),
             std::max(innerMetrics.descent, FONT_DESCENT),
         };
@@ -470,6 +568,36 @@ static void drawChar(Display& display, unsigned char c, int x, int y, uint16_t c
     }
 }
 
+static void drawTallParenthesis(Display& display,
+                                bool left,
+                                int x,
+                                int top,
+                                int height,
+                                uint16_t color) {
+    const int stemX = left ? x + FONT_CHAR_WIDTH - 2 : x + 1;
+    if (height <= FONT_CHAR_HEIGHT) {
+        drawChar(display,
+                 static_cast<unsigned char>(left ? '(' : ')'),
+                 x,
+                 top,
+                 color);
+        return;
+    }
+
+    display.drawPixel(stemX, top, color);
+    display.drawPixel(stemX + (left ? 1 : -1), top + 1, color);
+
+    const int stemTop = top + 2;
+    const int stemHeight = std::max(0, height - 4);
+    if (stemHeight > 0) {
+        display.drawRect(stemX, stemTop, 1, stemHeight, color);
+    }
+
+    const int bottom = top + height - 1;
+    display.drawPixel(stemX + (left ? 1 : -1), bottom - 1, color);
+    display.drawPixel(stemX, bottom, color);
+}
+
 static void drawTextSlice(Display& display,
                           const char* text,
                           int start,
@@ -487,7 +615,7 @@ static void drawTextSlice(Display& display,
     }
 }
 
-static void drawBoxRecursive(const Context& parseCtx,
+static void drawBoxRecursive(const ParseContext& parseCtx,
                              const LayoutContext& layout,
                              int nodeIndex,
                              int boxIndex,
@@ -514,9 +642,13 @@ static void drawBoxRecursive(const Context& parseCtx,
         for (int i = 0; i < box.childrenCount; i++) {
             const int childNode = parseCtx.rowChildren[node.childrenStart + i];
             const int childBox = layout.rowChildren[box.childrenStart + i];
+
             drawBoxRecursive(parseCtx, layout, childNode, childBox,
                              display, cursorX, baselineY, color);
             cursorX += layout.boxes[childBox].metrics.width;
+            if (i < box.childrenCount - 1) {
+                cursorX += layout.rowGaps[box.gapStart + i];
+            }
         }
         return;
     }
@@ -534,9 +666,9 @@ static void drawBoxRecursive(const Context& parseCtx,
         const int numeratorX = x + (box.metrics.width - numMetrics.width) / 2;
         const int denominatorX = x + (box.metrics.width - denMetrics.width) / 2;
 
-        const int numeratorTop = baselineY - 1 - numHeight;
+        const int numeratorTop = baselineY - 2 - numHeight;
         const int numeratorBaseline = numeratorTop + numMetrics.ascent;
-        const int denominatorTop = baselineY + 1;
+        const int denominatorTop = baselineY + 2;
         const int denominatorBaseline = denominatorTop + denMetrics.ascent;
 
         drawBoxRecursive(parseCtx, layout, numeratorNode, numeratorBox,
@@ -566,40 +698,38 @@ static void drawBoxRecursive(const Context& parseCtx,
     if (node.type == Node::Type::Parenthesized) {
         const int innerNode = node.left;
         const int innerBox = box.left;
-        const int parenWidth = FONT_CHAR_ADVANCE;
+        const int delimiterWidth = FONT_CHAR_ADVANCE;
 
-        drawChar(display, static_cast<unsigned char>('('), x, baselineY - FONT_ASCENT, color);
+        const int top = baselineY - box.metrics.ascent;
+        const int height = box.metrics.ascent + box.metrics.descent;
+
+        drawTallParenthesis(display, true, x, top, height, color);
         drawBoxRecursive(parseCtx, layout, innerNode, innerBox,
-                         display, x + parenWidth, baselineY, color);
-        drawChar(display, static_cast<unsigned char>(')'),
-                 x + parenWidth + layout.boxes[innerBox].metrics.width,
-                 baselineY - FONT_ASCENT,
-                 color);
+                         display, x + delimiterWidth, baselineY, color);
+        drawTallParenthesis(display,
+                            false,
+                            x + delimiterWidth + layout.boxes[innerBox].metrics.width,
+                            top,
+                            height,
+                            color);
     }
 }
 
 static bool buildLayout(const char* expression,
-                        Context& parseCtx,
-                        ParsedExpression& parsed,
+                        ParseContext& parseCtx,
+                        int& rootNode,
                         LayoutContext& layout,
                         int& rootBox) {
-    parseCtx = {};
-    parseCtx.text = expression;
-    parseCtx.length = static_cast<int>(std::strlen(expression));
-
-    if (parseCtx.length == 0) {
-        return false;
-    }
-
-    rootBox = -1;
-    parsed.root = parseExpression(parseCtx);
-    parsed.ok = !parseCtx.parseError && atEnd(parseCtx) && parsed.root >= 0;
+    ParsedRoot parsed = parse(expression);
     if (!parsed.ok) {
         return false;
     }
 
+    parseCtx = parsed.parse;
+    rootNode = parsed.rootNode;
+
     layout = {};
-    rootBox = layoutNode(parseCtx, parsed.root, layout);
+    rootBox = layoutNode(parseCtx, rootNode, layout);
     if (layout.layoutError || rootBox < 0) {
         return false;
     }
@@ -607,15 +737,156 @@ static bool buildLayout(const char* expression,
     return true;
 }
 
+static int clampCursor(int cursor, int expressionLength) {
+    if (cursor < 0) {
+        return 0;
+    }
+    if (cursor > expressionLength) {
+        return expressionLength;
+    }
+    return cursor;
+}
+
+static int nearestCursorInRange(const char* expression,
+                                int rangeStart,
+                                int rangeEnd,
+                                int preferredX) {
+    int best = rangeStart;
+    int bestDistance = 1 << 30;
+
+    for (int i = rangeStart; i <= rangeEnd; i++) {
+        const int x = measurePrefixWidth(expression, i);
+        const int distance = std::abs(x - preferredX);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = i;
+        }
+    }
+    return best;
+}
+
+struct FractionHit {
+    int fractionNode;
+    bool inNumerator;
+    bool inDenominator;
+};
+
+static bool cursorInSpan(const Node& node, int cursor) {
+    return cursor >= node.spanStart && cursor <= node.spanEnd;
+}
+
+static void findFractionAtCursor(const ParseContext& parseCtx,
+                                 int nodeIndex,
+                                 int cursor,
+                                 FractionHit& hit) {
+    const Node& node = parseCtx.nodes[nodeIndex];
+    if (!cursorInSpan(node, cursor)) {
+        return;
+    }
+
+    if (node.type == Node::Type::Fraction) {
+        const Node& num = parseCtx.nodes[node.left];
+        const Node& den = parseCtx.nodes[node.right];
+
+        const bool inNum = cursor <= node.opPos && cursorInSpan(num, cursor);
+        const bool inDen = cursor >= node.opPos + 1 && cursorInSpan(den, cursor);
+        if (inNum || inDen) {
+            hit.fractionNode = nodeIndex;
+            hit.inNumerator = inNum;
+            hit.inDenominator = inDen;
+        }
+    }
+
+    if (node.type == Node::Type::Row) {
+        for (int i = 0; i < node.childrenCount; i++) {
+            const int child = parseCtx.rowChildren[node.childrenStart + i];
+            findFractionAtCursor(parseCtx, child, cursor, hit);
+        }
+    } else if (node.type == Node::Type::Fraction ||
+               node.type == Node::Type::Superscript) {
+        findFractionAtCursor(parseCtx, node.left, cursor, hit);
+        findFractionAtCursor(parseCtx, node.right, cursor, hit);
+    } else if (node.type == Node::Type::Parenthesized) {
+        findFractionAtCursor(parseCtx, node.left, cursor, hit);
+    }
+}
+
+static int moveCursorByStructure(const char* expression,
+                                 const ParseContext& parseCtx,
+                                 int rootNode,
+                                 int cursor,
+                                 CursorMove move) {
+    const int length = static_cast<int>(std::strlen(expression));
+    cursor = clampCursor(cursor, length);
+
+    FractionHit hit{-1, false, false};
+    findFractionAtCursor(parseCtx, rootNode, cursor, hit);
+
+    if (move == CursorMove::Up || move == CursorMove::Down) {
+        if (hit.fractionNode >= 0) {
+            const Node& fraction = parseCtx.nodes[hit.fractionNode];
+            const Node& numerator = parseCtx.nodes[fraction.left];
+            const Node& denominator = parseCtx.nodes[fraction.right];
+            const int preferredX = measurePrefixWidth(expression, cursor);
+
+            if (move == CursorMove::Up && hit.inDenominator) {
+                return nearestCursorInRange(expression,
+                                            numerator.spanStart,
+                                            numerator.spanEnd,
+                                            preferredX);
+            }
+            if (move == CursorMove::Down && hit.inNumerator) {
+                return nearestCursorInRange(expression,
+                                            denominator.spanStart,
+                                            denominator.spanEnd,
+                                            preferredX);
+            }
+        }
+        return cursor;
+    }
+
+    if (move == CursorMove::Left) {
+        if (hit.fractionNode >= 0) {
+            const Node& fraction = parseCtx.nodes[hit.fractionNode];
+            const Node& numerator = parseCtx.nodes[fraction.left];
+            const Node& denominator = parseCtx.nodes[fraction.right];
+            if (hit.inNumerator && cursor <= numerator.spanStart) {
+                return fraction.spanStart;
+            }
+            if (hit.inDenominator && cursor <= denominator.spanStart) {
+                return fraction.spanStart;
+            }
+        }
+        return clampCursor(cursor - 1, length);
+    }
+
+    if (move == CursorMove::Right) {
+        if (hit.fractionNode >= 0) {
+            const Node& fraction = parseCtx.nodes[hit.fractionNode];
+            const Node& numerator = parseCtx.nodes[fraction.left];
+            const Node& denominator = parseCtx.nodes[fraction.right];
+            if (hit.inNumerator && cursor >= numerator.spanEnd) {
+                return fraction.spanEnd;
+            }
+            if (hit.inDenominator && cursor >= denominator.spanEnd) {
+                return fraction.spanEnd;
+            }
+        }
+        return clampCursor(cursor + 1, length);
+    }
+
+    return cursor;
+}
+
 } // namespace
 
 bool measure(const char* expression, LayoutMetrics& outMetrics) {
-    Context parseCtx{};
-    ParsedExpression parsed{};
+    ParseContext parseCtx{};
     LayoutContext layout{};
+    int rootNode = -1;
     int rootBox = -1;
 
-    if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {
+    if (!buildLayout(expression, parseCtx, rootNode, layout, rootBox)) {
         return false;
     }
 
@@ -644,22 +915,43 @@ int measurePrefixWidth(const char* expression, int prefixLength) {
     return copied * FONT_CHAR_ADVANCE;
 }
 
+int moveCursor(const char* expression, int cursorPosition, CursorMove move) {
+    ParsedRoot parsed = parse(expression);
+    const int length = static_cast<int>(std::strlen(expression));
+
+    if (!parsed.ok) {
+        if (move == CursorMove::Left) {
+            return clampCursor(cursorPosition - 1, length);
+        }
+        if (move == CursorMove::Right) {
+            return clampCursor(cursorPosition + 1, length);
+        }
+        return clampCursor(cursorPosition, length);
+    }
+
+    return moveCursorByStructure(expression,
+                                 parsed.parse,
+                                 parsed.rootNode,
+                                 cursorPosition,
+                                 move);
+}
+
 bool draw(const char* expression,
           Display& display,
           int x,
           int baselineY,
           uint16_t color,
           LayoutMetrics* outMetrics) {
-    Context parseCtx{};
-    ParsedExpression parsed{};
+    ParseContext parseCtx{};
     LayoutContext layout{};
+    int rootNode = -1;
     int rootBox = -1;
 
-    if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {
+    if (!buildLayout(expression, parseCtx, rootNode, layout, rootBox)) {
         return false;
     }
 
-    drawBoxRecursive(parseCtx, layout, parsed.root, rootBox,
+    drawBoxRecursive(parseCtx, layout, rootNode, rootBox,
                      display, x, baselineY, color);
 
     if (outMetrics != nullptr) {

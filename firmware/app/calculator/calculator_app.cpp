@@ -98,6 +98,7 @@ CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
     , m_resultIsError(false)
     , m_inputLen(0)
     , m_cursorPos(0)
+    , m_inputViewportX(0)
     , m_awaitingNewInput(false)
     , m_historyScroll(0)
     , m_injectedKey(Key::NONE)
@@ -122,13 +123,18 @@ void CalculatorApp::handleEvents() {
             m_historyScroll += (event.wheel.y > 0) ? -1 : 1;
         }
         if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_UP)   m_historyScroll--;
-            if (event.key.keysym.sym == SDLK_DOWN)  m_historyScroll++;
-            // Wire SDL left/right arrow keys to cursor movement
-            if (event.key.keysym.sym == SDLK_LEFT)
+            if (event.key.keysym.sym == SDLK_UP) {
+                m_injectedKey = Key::CURSOR_UP;
+            }
+            if (event.key.keysym.sym == SDLK_DOWN) {
+                m_injectedKey = Key::CURSOR_DOWN;
+            }
+            if (event.key.keysym.sym == SDLK_LEFT) {
                 m_injectedKey = Key::CURSOR_LEFT;
-            if (event.key.keysym.sym == SDLK_RIGHT)
+            }
+            if (event.key.keysym.sym == SDLK_RIGHT) {
                 m_injectedKey = Key::CURSOR_RIGHT;
+            }
         }
 
         // Mouse click — hit test against the button grid
@@ -188,13 +194,28 @@ void CalculatorApp::processKey(Key pressed) {
         m_resultBuffer[0] = '\0';
         m_resultIsError   = false;
         m_awaitingNewInput = false;
+        m_inputViewportX = 0;
     }
 
     if (pressed == Key::CURSOR_LEFT) {
-        if (m_cursorPos > 0) m_cursorPos--;
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Left);
 
     } else if (pressed == Key::CURSOR_RIGHT) {
-        if (m_cursorPos < m_inputLen) m_cursorPos++;
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Right);
+
+    } else if (pressed == Key::CURSOR_UP) {
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Up);
+
+    } else if (pressed == Key::CURSOR_DOWN) {
+        m_cursorPos = math_typeset::moveCursor(m_inputBuffer,
+                                               m_cursorPos,
+                                               math_typeset::CursorMove::Down);
 
     } else if (pressed == Key::CLEAR) {
         // Backspace at cursor position
@@ -280,6 +301,7 @@ void CalculatorApp::pushHistory() {
     m_inputBuffer[0]  = '\0';
     m_resultBuffer[0] = '\0';
     m_resultIsError   = false;
+    m_inputViewportX  = 0;
 }
 
 void CalculatorApp::clampScroll() {
@@ -352,13 +374,26 @@ void CalculatorApp::drawInputRow() {
                            COLOR_SEPARATOR);
     }
 
+    const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
+    const int viewportWidth = DISPLAY_WIDTH - MARGIN * 2;
+    if (prefixWidth - m_inputViewportX > viewportWidth - 8) {
+        m_inputViewportX = prefixWidth - (viewportWidth - 8);
+    }
+    if (prefixWidth - m_inputViewportX < 0) {
+        m_inputViewportX = prefixWidth;
+    }
+    if (m_inputViewportX < 0) {
+        m_inputViewportX = 0;
+    }
+
+    const int inputOriginX = MARGIN - m_inputViewportX;
     const bool drewMath = math_typeset::draw(m_inputBuffer,
                                              m_display,
-                                             MARGIN,
+                                             inputOriginX,
                                              inputY + (FONT_CHAR_HEIGHT - 1),
                                              Display::WHITE);
     if (!drewMath) {
-        m_display.drawText(m_inputBuffer, MARGIN, inputY, Display::WHITE);
+        m_display.drawText(m_inputBuffer, inputOriginX, inputY, Display::WHITE);
     }
 
     int resultX = DISPLAY_WIDTH
@@ -376,7 +411,7 @@ void CalculatorApp::drawCursor(int inputY) {
 
     // Cursor sits at cursorPos, not necessarily the end of the string
     const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
-    int cursorX = MARGIN + prefixWidth;
+    int cursorX = MARGIN + prefixWidth - m_inputViewportX;
 
     math_typeset::LayoutMetrics metrics{};
     const bool hasMathMetrics = math_typeset::measure(m_inputBuffer, metrics);
