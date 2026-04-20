@@ -53,6 +53,7 @@ enum class Key {
    LN          = 0x96,
    ANS         = 0x97,
    ROOT        = 0x98,
+   HOME        = 0x99,
    // Custom font characters
    PI          = 0xFF,
 

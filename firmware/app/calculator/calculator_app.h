@@ -41,6 +41,9 @@ public:
     void init();
     void handleEvents();
     void update();
+    void handleKey(Key pressed);
+    void handlePointerDown(int logicalX, int logicalY);
+    void scrollHistory(int delta);
     void render();
 
 private:

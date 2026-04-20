@@ -18,6 +18,8 @@ if(PLATFORM STREQUAL "host")
             graphics/font.h
             hal/display.h
             hal/keypad.h
+            app/home/calculator_home.cpp
+            app/home/calculator_home.h
     )
 
     target_link_libraries(calculator_app

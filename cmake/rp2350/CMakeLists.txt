@@ -11,6 +11,8 @@ add_executable(mi23
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350_2.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350_2.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
 )
 
 target_link_libraries(mi23 PRIVATE

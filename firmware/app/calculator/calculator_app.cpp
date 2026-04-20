@@ -257,22 +257,6 @@ void CalculatorApp::handleEvents() {
         if (event.type == SDL_MOUSEWHEEL) {
             m_historyScroll += (event.wheel.y > 0) ? -1 : 1;
         }
-        if (event.type == SDL_KEYDOWN) {
-            // Wire SDL arrow keys to cursor movement.
-            if (event.key.keysym.sym == SDLK_LEFT) {
-                m_injectedKey = Key::CURSOR_LEFT;
-            }
-            if (event.key.keysym.sym == SDLK_RIGHT) {
-                m_injectedKey = Key::CURSOR_RIGHT;
-            }
-            if (event.key.keysym.sym == SDLK_UP) {
-                m_injectedKey = Key::CURSOR_UP;
-            }
-            if (event.key.keysym.sym == SDLK_DOWN) {
-                m_injectedKey = Key::CURSOR_DOWN;
-            }
-        }
-
         // Mouse click — hit test against the button grid
         if (event.type == SDL_MOUSEBUTTONDOWN &&
             event.button.button == SDL_BUTTON_LEFT) {
@@ -313,9 +297,25 @@ void CalculatorApp::update() {
         pressed       = m_injectedKey;
         m_injectedKey = Key::NONE;
     }
+    handleKey(pressed);
+}
+
+void CalculatorApp::handleKey(Key pressed) {
     if (pressed != Key::NONE) {
         processKey(pressed);
     }
+    clampScroll();
+}
+
+void CalculatorApp::handlePointerDown(int logicalX, int logicalY) {
+    const Button* btn = hitTest(logicalX, logicalY);
+    if (btn) {
+        handleKey(btn->key);
+    }
+}
+
+void CalculatorApp::scrollHistory(int delta) {
+    m_historyScroll += delta;
     clampScroll();
 }
 
@@ -458,7 +458,6 @@ void CalculatorApp::render() {
     drawInputRow();
     drawButtonGrid();
     m_display.present();
-    SDL_Delay(16);
 }
 
 void CalculatorApp::drawHistory() {
