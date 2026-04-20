@@ -150,7 +150,10 @@ private:
 
 } // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    (void) argc;
+    (void) argv;
+
     printf("Calculator Simulator Is Starting...\n");
 
     DisplaySDL display;

@@ -63,6 +63,22 @@ cd MI-23
 ./build-host/firmware/platform/host/sdl_simulator/mi23
 ```
 
+### Cross-compile for Windows from Linux
+
+Install the MinGW-w64 cross toolchain and Windows SDL2 development package for your Linux distribution, then run:
+
+```bash
+./build.sh --clean --platform=windows
+```
+
+This produces:
+
+```text
+build-win/firmware/platform/host/sdl_simulator/mi23.exe
+```
+
+The build script also copies the required MinGW/SDL runtime DLLs next to the executable, including `SDL3.dll` when the installed SDL2 package uses SDL2 compatibility on top of SDL3.
+
 ## Building for Hardware
 
 ### Prerequisites

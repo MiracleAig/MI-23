@@ -26,6 +26,7 @@ project(mi23)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+option(BUILD_TESTING "Build unit tests" ON)
 
 if(PLATFORM STREQUAL "rp2350")
     pico_sdk_init()
@@ -33,6 +34,6 @@ endif()
 
 add_subdirectory(firmware)
 
-if(PLATFORM STREQUAL "host")
+if(PLATFORM STREQUAL "host" AND BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(tests)
 endif()
