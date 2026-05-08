@@ -12,6 +12,7 @@ add_executable(mi23
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350_2.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350_2.h
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.cpp
+        ${CMAKE_SOURCE_DIR}/firmware/app/calculator/calculator_app.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
 )
 

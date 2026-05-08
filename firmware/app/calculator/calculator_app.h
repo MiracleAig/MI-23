@@ -5,16 +5,15 @@
 #pragma once
 
 #include "history.h"
+#include "hal/display.h"
+#include "hal/keypad.h"
 #include "math/math_typeset.h"
-#include "platform/host/display_sdl.h"
-#include "platform/host/keypad_host.h"
-#include <vector>
+#include <array>
 
 static constexpr int MARGIN       = 5;
 static constexpr int ROW_HEIGHT   = 20;
 static constexpr int HISTORY_TOP  = 4;
-static constexpr int HISTORY_BOTTOM = 100;
-static constexpr int HISTORY_HEIGHT = HISTORY_BOTTOM - HISTORY_TOP;
+static constexpr int HISTORY_BOTTOM_WITH_KEYPAD = 100;
 
 static const uint16_t COLOR_HISTORY_BG   = Display::rgb(10, 10, 18);
 static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
@@ -34,21 +33,29 @@ struct Button {
     Key         key;     // key injected when clicked
 };
 
+struct CalculatorAppConfig {
+    bool showOnScreenKeypad = false;
+    int uiScale = 1;
+};
+
 class CalculatorApp {
 public:
-    CalculatorApp(DisplaySDL& display, KeypadHost& keypad);
+    static constexpr int MAX_HISTORY = 64;
+
+    CalculatorApp(Display& display, Keypad& keypad,
+                  const CalculatorAppConfig& config = {});
 
     void init();
-    void handleEvents();
     void update();
     void handleKey(Key pressed);
     void handlePointerDown(int logicalX, int logicalY);
     void scrollHistory(int delta);
     void render();
+    void requestRender();
 
 private:
-    DisplaySDL& m_display;
-    KeypadHost& m_keypad;
+    Display& m_display;
+    Keypad& m_keypad;
 
     char m_inputBuffer[128];
     char m_resultBuffer[64];
@@ -58,12 +65,18 @@ private:
     int  m_cursorPos;          // NEW — index within m_inputBuffer
     int  m_inputViewportX;
     bool m_awaitingNewInput;
+    int m_historyBottom;
+    int m_historyHeight;
 
-    std::vector<HistoryEntry> m_history;
+    std::array<HistoryEntry, MAX_HISTORY> m_history;
+    int m_historyCount;
+    int m_historyStart;
     int m_historyScroll;
 
     // Injected key from a mouse click — checked each update() tick
     Key m_injectedKey;
+    CalculatorAppConfig m_config;
+    bool m_needsRender;
 
     void processKey(Key pressed);
     void pushHistory();
@@ -76,6 +89,8 @@ private:
                     bool usedMathLayout);
     void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();
+    int historySize() const;
+    const HistoryEntry& historyAt(int index) const;
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {

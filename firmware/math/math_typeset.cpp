@@ -665,7 +665,8 @@ static void drawCharScaled(Display& display,
             if ((columnBits >> row) & 1U) {
                 const int scaledX = x + scaleLength(col, scale);
                 const int scaledY = y + scaleLength(row, scale);
-                display.drawPixel(scaledX, scaledY, color);
+                const int pixelSize = std::max(1, scaleLength(1, scale));
+                display.drawRect(scaledX, scaledY, pixelSize, pixelSize, color);
             }
         }
     }
@@ -692,12 +693,15 @@ static void drawTallParen(Display& display,
         return;
     }
 
+    const int strokeWidth = std::max(1, scaleLength(1, scale));
     const int strokeX = x + scaleLength(leftParen ? 1 : FONT_CHAR_WIDTH - 2, scale);
     const int capInnerX = x + scaleLength(leftParen ? 2 : FONT_CHAR_WIDTH - 3, scale);
     const int bottom = top + height - 1;
-    display.drawRect(strokeX, top + 1, 1, std::max(1, height - 2), color);
-    display.drawPixel(capInnerX, top, color);
-    display.drawPixel(capInnerX, bottom, color);
+    display.drawRect(strokeX, top + strokeWidth, strokeWidth,
+                     std::max(strokeWidth, height - strokeWidth * 2), color);
+    display.drawRect(capInnerX, top, strokeWidth, strokeWidth, color);
+    display.drawRect(capInnerX, bottom - strokeWidth + 1,
+                     strokeWidth, strokeWidth, color);
 }
 
 static void drawRootSymbol(Display& display,
@@ -706,16 +710,25 @@ static void drawRootSymbol(Display& display,
                            int baselineY,
                            int bottom,
                            int width,
-                           uint16_t color) {
+                           uint16_t color,
+                           float scale) {
+    const int strokeWidth = std::max(1, scaleLength(1, scale));
     const int hookBottom = std::max(bottom, baselineY);
-    const int stemX = x + 4;
+    const int stemX = x + scaleLength(4, scale);
     const int barY = top;
-    display.drawPixel(x, hookBottom - 2, color);
-    display.drawPixel(x + 1, hookBottom - 1, color);
-    display.drawPixel(x + 2, hookBottom, color);
-    display.drawPixel(x + 3, hookBottom - 1, color);
-    display.drawRect(stemX, barY + 1, 1, std::max(1, hookBottom - barY), color);
-    display.drawRect(stemX, barY, std::max(1, width - (stemX - x)), 1, color);
+    display.drawRect(x, hookBottom - scaleLength(2, scale),
+                     strokeWidth, strokeWidth, color);
+    display.drawRect(x + scaleLength(1, scale), hookBottom - scaleLength(1, scale),
+                     strokeWidth, strokeWidth, color);
+    display.drawRect(x + scaleLength(2, scale), hookBottom,
+                     strokeWidth, strokeWidth, color);
+    display.drawRect(x + scaleLength(3, scale), hookBottom - scaleLength(1, scale),
+                     strokeWidth, strokeWidth, color);
+    display.drawRect(stemX, barY + strokeWidth, strokeWidth,
+                     std::max(strokeWidth, hookBottom - barY), color);
+    display.drawRect(stemX, barY,
+                     std::max(strokeWidth, width - (stemX - x)),
+                     strokeWidth, color);
 }
 
 static void drawTextSlice(Display& display,
@@ -801,7 +814,10 @@ static void drawBoxRecursive(const Context& parseCtx,
 
         drawBoxRecursive(parseCtx, layout, numeratorNode, numeratorBox,
                          display, numeratorX, numeratorBaseline, color, scale);
-        display.drawRect(x, baselineY, std::max(1, scaledBoxWidth), 1, color);
+        display.drawRect(x, baselineY,
+                         std::max(1, scaledBoxWidth),
+                         std::max(1, scaleLength(1, scale)),
+                         color);
         drawBoxRecursive(parseCtx, layout, denominatorNode, denominatorBox,
                          display, denominatorX, denominatorBaseline, color, scale);
         return;
@@ -835,7 +851,8 @@ static void drawBoxRecursive(const Context& parseCtx,
                        baselineY,
                        bottom,
                        radicalWidth + scaledRadicandMetrics.width + 1,
-                       color);
+                       color,
+                       scale);
         drawBoxRecursive(parseCtx, layout, radicandNode, radicandBox,
                          display, radicandX, baselineY, color, scale);
         return;
