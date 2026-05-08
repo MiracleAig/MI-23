@@ -34,11 +34,16 @@ struct Button {
     Key         key;     // key injected when clicked
 };
 
+struct CalculatorAppConfig {
+    bool showOnScreenKeypad = false;
+};
+
 class CalculatorApp {
 public:
     static constexpr int MAX_HISTORY = 64;
 
-    CalculatorApp(Display& display, Keypad& keypad);
+    CalculatorApp(Display& display, Keypad& keypad,
+                  const CalculatorAppConfig& config = {});
 
     void init();
     void update();
@@ -46,6 +51,7 @@ public:
     void handlePointerDown(int logicalX, int logicalY);
     void scrollHistory(int delta);
     void render();
+    void requestRender();
 
 private:
     Display& m_display;
@@ -67,6 +73,8 @@ private:
 
     // Injected key from a mouse click — checked each update() tick
     Key m_injectedKey;
+    CalculatorAppConfig m_config;
+    bool m_needsRender;
 
     void processKey(Key pressed);
     void pushHistory();

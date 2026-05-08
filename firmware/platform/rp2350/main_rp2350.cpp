@@ -23,6 +23,12 @@ const uint16_t COLOR_HEADER_TEXT = Display::WHITE;
 const uint16_t COLOR_HEADER_MUTED = Display::rgb(150, 160, 172);
 const uint16_t COLOR_HOME_BG = Display::rgb(8, 10, 14);
 
+CalculatorAppConfig rpCalculatorConfig() {
+    CalculatorAppConfig config;
+    config.showOnScreenKeypad = false;
+    return config;
+}
+
 class DualKeypad : public Keypad {
 public:
     DualKeypad(Keypad& primary, Keypad& secondary)
@@ -105,7 +111,8 @@ public:
         , m_keypad(keypad)
         , m_home(home)
         , m_calculator(calculator)
-        , m_activeApp(AppId::Home) {}
+        , m_activeApp(AppId::Home)
+        , m_waitingForRelease(false) {}
 
     void init() {
         m_display.init();
@@ -115,7 +122,14 @@ public:
     }
 
     void tick() {
-        const Key pressed = m_keypad.getKey();
+        const Key raw = m_keypad.getKey();
+        Key pressed = Key::NONE;
+        if (raw == Key::NONE) {
+            m_waitingForRelease = false;
+        } else if (!m_waitingForRelease) {
+            pressed = raw;
+            m_waitingForRelease = true;
+        }
 
         if (pressed == Key::HOME) {
             goHome();
@@ -158,6 +172,7 @@ private:
     HomeScreen& m_home;
     CalculatorApp& m_calculator;
     AppId m_activeApp;
+    bool m_waitingForRelease;
 
     void goHome() {
         if (m_activeApp != AppId::Home) {
@@ -170,6 +185,7 @@ private:
     void launch(AppId app) {
         if (app == AppId::Calculator) {
             m_activeApp = AppId::Calculator;
+            m_calculator.requestRender();
             m_calculator.render();
         } else if (app == AppId::Graphing) {
             m_activeApp = AppId::Graphing;
@@ -188,7 +204,7 @@ int main() {
     DualKeypad keypad(keypad1, keypad2);
 
     HomeScreen home(display);
-    CalculatorApp calculator(display, keypad);
+    CalculatorApp calculator(display, keypad, rpCalculatorConfig());
 
     RP2350AppController app(display, keypad, home, calculator);
     app.init();

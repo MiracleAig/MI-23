@@ -10,6 +10,11 @@
 #include <cstdio>
 
 namespace {
+CalculatorAppConfig hostCalculatorConfig() {
+    CalculatorAppConfig config;
+    config.showOnScreenKeypad = true;
+    return config;
+}
 
 const uint16_t COLOR_BG = Display::rgb(8, 10, 14);
 const uint16_t COLOR_HEADER = Display::rgb(22, 35, 48);
@@ -62,7 +67,7 @@ public:
         : m_display(display)
         , m_keypad(keypad)
         , m_home(display)
-        , m_calculator(display, keypad)
+        , m_calculator(display, keypad, hostCalculatorConfig())
         , m_activeApp(AppId::Home)
     {}
 
@@ -144,6 +149,9 @@ private:
     void launch(AppId app) {
         if (app == AppId::Calculator || app == AppId::Graphing) {
             m_activeApp = app;
+            if (app == AppId::Calculator) {
+                m_calculator.requestRender();
+            }
         }
     }
 };

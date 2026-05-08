@@ -227,7 +227,8 @@ static void drawButtonRootIcon(Display& display,
 }
 
 
-CalculatorApp::CalculatorApp(Display& display, Keypad& keypad)
+CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
+                             const CalculatorAppConfig& config)
     : m_display(display)
     , m_keypad(keypad)
     , m_inputBuffer{}
@@ -242,6 +243,8 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad)
     , m_historyStart(0)
     , m_historyScroll(0)
     , m_injectedKey(Key::NONE)
+    , m_config(config)
+    , m_needsRender(true)
 {}
 
 void CalculatorApp::init() {
@@ -278,6 +281,7 @@ void CalculatorApp::update() {
 void CalculatorApp::handleKey(Key pressed) {
     if (pressed != Key::NONE) {
         processKey(pressed);
+        m_needsRender = true;
     }
     clampScroll();
 }
@@ -292,6 +296,7 @@ void CalculatorApp::handlePointerDown(int logicalX, int logicalY) {
 void CalculatorApp::scrollHistory(int delta) {
     m_historyScroll += delta;
     clampScroll();
+    m_needsRender = true;
 }
 
 // ── Key processing ───────────────────────────────────────────────────────────
@@ -445,13 +450,23 @@ void CalculatorApp::clampScroll() {
 
 // ── Render ───────────────────────────────────────────────────────────────────
 void CalculatorApp::render() {
+    if (!m_needsRender) {
+        return;
+    }
     m_display.clear(Display::BLACK);
     m_display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, HISTORY_HEIGHT,
                        COLOR_HISTORY_BG);
     drawHistory();
     drawInputRow();
-    drawButtonGrid();
+    if (m_config.showOnScreenKeypad) {
+        drawButtonGrid();
+    }
     m_display.present();
+    m_needsRender = false;
+}
+
+void CalculatorApp::requestRender() {
+    m_needsRender = true;
 }
 
 void CalculatorApp::drawHistory() {
