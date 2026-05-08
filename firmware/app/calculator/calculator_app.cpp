@@ -32,6 +32,49 @@ static const uint16_t COLOR_BTN_FN      = Display::rgb( 80,  50, 100); // SIN/CO
 static const uint16_t COLOR_BTN_TEXT    = Display::WHITE;
 static constexpr char PAREN_PAIR_TEXT[]  = "()";
 static constexpr int ENTRY_VERTICAL_PADDING = 2;
+static constexpr int SCALED_RESULT_GAP = 4;
+
+static int normalizedScale(int scale) {
+    return std::max(1, scale);
+}
+
+static int scaledTextWidth(const char* text, int scale) {
+    return Display::textWidth(text) * normalizedScale(scale);
+}
+
+static int scaledFontHeight(int scale) {
+    return FONT_CHAR_HEIGHT * normalizedScale(scale);
+}
+
+static void drawPlainTextScaled(Display& display,
+                                const char* text,
+                                int x,
+                                int y,
+                                uint16_t color,
+                                int scale) {
+    const int normalized = normalizedScale(scale);
+    int cursorX = x;
+
+    while (*text != '\0') {
+        const unsigned char c = static_cast<unsigned char>(*text);
+        const uint8_t* glyph = &FONT_DATA[c * FONT_CHAR_WIDTH];
+        for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
+            const uint8_t columnBits = glyph[col];
+            for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
+                if ((columnBits >> row) & 1U) {
+                    display.drawRect(cursorX + col * normalized,
+                                     y + row * normalized,
+                                     normalized,
+                                     normalized,
+                                     color);
+                }
+            }
+        }
+
+        cursorX += FONT_CHAR_ADVANCE * normalized;
+        text++;
+    }
+}
 
 static const char* functionInsertText(Key key) {
     switch (key) {
@@ -101,36 +144,69 @@ static int baselineForEntry(int topY,
         + math_typeset::scaleLength(metrics.ascent, scale);
 }
 
-static int historyEntryHeight(const HistoryEntry& entry) {
+static int historyEntryHeight(const HistoryEntry& entry, int uiScale) {
+    const int scale = normalizedScale(uiScale);
     math_typeset::LayoutMetrics metrics{};
     if (math_typeset::measure(entry.input.c_str(), metrics)) {
+        const int inputHeight = math_typeset::scaleLength(metrics.ascent + metrics.descent,
+                                                          static_cast<float>(scale));
+        if (scale > 1) {
+            return std::max(ROW_HEIGHT,
+                            inputHeight + scaledFontHeight(scale)
+                                + ENTRY_VERTICAL_PADDING * 2 + SCALED_RESULT_GAP);
+        }
+
         return std::max(ROW_HEIGHT,
                         metrics.ascent + metrics.descent
                             + ENTRY_VERTICAL_PADDING * 2);
     }
 
+    if (scale > 1) {
+        return std::max(ROW_HEIGHT,
+                        scaledFontHeight(scale) * 2
+                            + ENTRY_VERTICAL_PADDING * 2 + SCALED_RESULT_GAP);
+    }
+
     return ROW_HEIGHT;
 }
 
-static int inputEntryHeight(const char* input) {
+static int inputEntryHeight(const char* input, int uiScale) {
+    const int scale = normalizedScale(uiScale);
     math_typeset::LayoutMetrics metrics{};
     if (math_typeset::measure(input, metrics)) {
+        const int inputHeight = math_typeset::scaleLength(metrics.ascent + metrics.descent,
+                                                          static_cast<float>(scale));
+        if (scale > 1) {
+            return std::max(ROW_HEIGHT,
+                            inputHeight + scaledFontHeight(scale)
+                                + ENTRY_VERTICAL_PADDING * 2 + SCALED_RESULT_GAP);
+        }
+
         return std::max(ROW_HEIGHT,
                         metrics.ascent + metrics.descent
                             + ENTRY_VERTICAL_PADDING * 2);
     }
 
+    if (scale > 1) {
+        return std::max(ROW_HEIGHT,
+                        scaledFontHeight(scale) * 2
+                            + ENTRY_VERTICAL_PADDING * 2 + SCALED_RESULT_GAP);
+    }
+
     return ROW_HEIGHT;
 }
 
-static int historyViewportHeightForInput(const char* input, int historyHeight) {
-    return std::max(0, historyHeight - inputEntryHeight(input));
+static int historyViewportHeightForInput(const char* input,
+                                         int historyHeight,
+                                         int uiScale) {
+    return std::max(0, historyHeight - inputEntryHeight(input, uiScale));
 }
 
 template <typename EntryGetter>
 static int bottomHistoryScroll(int historySize,
                                EntryGetter getEntry,
-                               int viewportHeight) {
+                               int viewportHeight,
+                               int uiScale) {
     if (viewportHeight <= 0) {
         return historySize;
     }
@@ -139,7 +215,7 @@ static int bottomHistoryScroll(int historySize,
     int usedHeight = 0;
 
     while (scrollIndex > 0) {
-        const int entryHeight = historyEntryHeight(getEntry(scrollIndex - 1));
+        const int entryHeight = historyEntryHeight(getEntry(scrollIndex - 1), uiScale);
         if (usedHeight + entryHeight > viewportHeight) {
             break;
         }
@@ -158,7 +234,8 @@ template <typename EntryGetter>
 static int visibleHistoryHeight(int historySize,
                                 EntryGetter getEntry,
                                 int scrollIndex,
-                                int viewportHeight) {
+                                int viewportHeight,
+                                int uiScale) {
     if (viewportHeight <= 0) {
         return 0;
     }
@@ -166,7 +243,7 @@ static int visibleHistoryHeight(int historySize,
     int usedHeight = 0;
 
     for (int i = scrollIndex; i < historySize; i++) {
-        const int entryHeight = historyEntryHeight(getEntry(i));
+        const int entryHeight = historyEntryHeight(getEntry(i), uiScale);
         if (usedHeight + entryHeight > viewportHeight) {
             break;
         }
@@ -413,7 +490,8 @@ void CalculatorApp::pushHistory() {
                                               [this](int i) -> const HistoryEntry& {
                                                   return historyAt(i);
                                               },
-                                              m_historyHeight);
+                                              m_historyHeight,
+                                              m_config.uiScale);
     bool wasNearBottom = (m_historyScroll >= std::max(0, maxScrollBefore - 1));
 
     if (m_historyCount < MAX_HISTORY) {
@@ -430,7 +508,8 @@ void CalculatorApp::pushHistory() {
                                               [this](int i) -> const HistoryEntry& {
                                                   return historyAt(i);
                                               },
-                                              m_historyHeight);
+                                              m_historyHeight,
+                                              m_config.uiScale);
     }
 
     m_inputLen        = 0;
@@ -444,12 +523,14 @@ void CalculatorApp::pushHistory() {
 void CalculatorApp::clampScroll() {
     if (m_historyScroll < 0) m_historyScroll = 0;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
-                                                                    m_historyHeight);
+                                                                    m_historyHeight,
+                                                                    m_config.uiScale);
     int maxScroll = bottomHistoryScroll(historySize(),
                                         [this](int i) -> const HistoryEntry& {
                                             return historyAt(i);
                                         },
-                                        historyViewportHeight);
+                                        historyViewportHeight,
+                                        m_config.uiScale);
     if (m_historyScroll > maxScroll) m_historyScroll = maxScroll;
 }
 
@@ -478,11 +559,12 @@ void CalculatorApp::drawHistory() {
     int startIndex = m_historyScroll;
     int y = HISTORY_TOP;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
-                                                                    m_historyHeight);
+                                                                    m_historyHeight,
+                                                                    m_config.uiScale);
     const int historyBottom = HISTORY_TOP + historyViewportHeight;
 
     for (int i = startIndex; i < historySize(); i++) {
-        const int entryHeight = historyEntryHeight(historyAt(i));
+        const int entryHeight = historyEntryHeight(historyAt(i), m_config.uiScale);
         if (y >= historyBottom || y + entryHeight > historyBottom) {
             break;
         }
@@ -498,10 +580,11 @@ void CalculatorApp::drawHistory() {
         math_typeset::LayoutMetrics historyMetrics{};
         const bool measuredMath = math_typeset::measure(historyAt(i).input.c_str(),
                                                         historyMetrics);
-        const float expressionScale = 1.0f;
+        const int uiScale = normalizedScale(m_config.uiScale);
+        const float expressionScale = static_cast<float>(uiScale);
         const int baselineY = measuredMath
             ? baselineForEntry(rowTop, historyMetrics, expressionScale)
-            : y + (FONT_CHAR_HEIGHT - 1);
+            : y + math_typeset::scaleLength(FONT_CHAR_HEIGHT - 1, expressionScale);
 
         const bool drewMath = measuredMath &&
                               math_typeset::drawScaled(historyAt(i).input.c_str(),
@@ -511,16 +594,27 @@ void CalculatorApp::drawHistory() {
                                                        Display::WHITE,
                                                        expressionScale);
         if (!drewMath) {
-            m_display.drawText(historyAt(i).input.c_str(), MARGIN, y,
-                               Display::WHITE);
+            drawPlainTextScaled(m_display,
+                                historyAt(i).input.c_str(),
+                                MARGIN,
+                                y,
+                                Display::WHITE,
+                                uiScale);
         }
 
         int resultX = DISPLAY_WIDTH
-                      - Display::textWidth(historyAt(i).result.c_str())
+                      - scaledTextWidth(historyAt(i).result.c_str(), uiScale)
                       - MARGIN;
         if (resultX < 0) resultX = 0;
-        m_display.drawText(historyAt(i).result.c_str(), resultX, y + 8,
-                           historyAt(i).isError ? Display::RED : Display::GREEN);
+        const int resultY = (uiScale > 1)
+            ? y + entryHeight - ENTRY_VERTICAL_PADDING - scaledFontHeight(uiScale)
+            : y + 8;
+        drawPlainTextScaled(m_display,
+                            historyAt(i).result.c_str(),
+                            resultX,
+                            resultY,
+                            historyAt(i).isError ? Display::RED : Display::GREEN,
+                            uiScale);
 
         y += entryHeight;
     }
@@ -529,7 +623,8 @@ void CalculatorApp::drawHistory() {
                                         [this](int i) -> const HistoryEntry& {
                                             return historyAt(i);
                                         },
-                                        historyViewportHeight);
+                                        historyViewportHeight,
+                                        m_config.uiScale);
     if (maxScroll > 0) {
         drawScrollbar(maxScroll, historyViewportHeight);
     }
@@ -537,12 +632,14 @@ void CalculatorApp::drawHistory() {
 
 void CalculatorApp::drawInputRow() {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
-                                                                    m_historyHeight);
+                                                                    m_historyHeight,
+                                                                    m_config.uiScale);
     int inputY = HISTORY_TOP
         + visibleHistoryHeight(historySize(),
                                [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                m_historyScroll,
-                               historyViewportHeight);
+                               historyViewportHeight,
+                               m_config.uiScale);
 
     if (inputY > HISTORY_TOP) {
         m_display.drawRect(MARGIN, inputY - 2,
@@ -553,10 +650,11 @@ void CalculatorApp::drawInputRow() {
     const int inputTop = inputY;
     math_typeset::LayoutMetrics metrics{};
     const bool measuredMath = math_typeset::measure(m_inputBuffer, metrics);
-    const float expressionScale = 1.0f;
+    const int uiScale = normalizedScale(m_config.uiScale);
+    const float expressionScale = static_cast<float>(uiScale);
     const int baselineY = measuredMath
         ? baselineForEntry(inputTop, metrics, expressionScale)
-        : inputY + (FONT_CHAR_HEIGHT - 1);
+        : inputY + math_typeset::scaleLength(FONT_CHAR_HEIGHT - 1, expressionScale);
 
     const int viewportWidth = DISPLAY_WIDTH - MARGIN * 2;
     int cursorLayoutX = 0;
@@ -592,7 +690,8 @@ void CalculatorApp::drawInputRow() {
                                                    Display::WHITE,
                                                    expressionScale);
     if (!drewMath) {
-        m_display.drawText(m_inputBuffer, inputOriginX, inputY, Display::WHITE);
+        drawPlainTextScaled(m_display, m_inputBuffer, inputOriginX, inputY,
+                            Display::WHITE, uiScale);
         metrics = {
             Display::textWidth(m_inputBuffer),
             FONT_CHAR_HEIGHT - 1,
@@ -601,10 +700,18 @@ void CalculatorApp::drawInputRow() {
     }
 
     int resultX = DISPLAY_WIDTH
-                  - Display::textWidth(m_resultBuffer) - MARGIN;
+                  - scaledTextWidth(m_resultBuffer, uiScale) - MARGIN;
     if (resultX < 0) resultX = 0;
-    m_display.drawText(m_resultBuffer, resultX, inputY + 10,
-                       m_resultIsError ? Display::RED : Display::GREEN);
+    const int inputRowHeight = inputEntryHeight(m_inputBuffer, uiScale);
+    const int resultY = (uiScale > 1)
+        ? inputY + inputRowHeight - ENTRY_VERTICAL_PADDING - scaledFontHeight(uiScale)
+        : inputY + 10;
+    drawPlainTextScaled(m_display,
+                        m_resultBuffer,
+                        resultX,
+                        resultY,
+                        m_resultIsError ? Display::RED : Display::GREEN,
+                        uiScale);
 
     drawCursor(inputOriginX, baselineY, expressionScale, metrics, drewMath);
 }
@@ -643,7 +750,8 @@ void CalculatorApp::drawCursor(int originX,
     }
 
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
-        m_display.drawRect(cursorX, cursorTop, 2, cursorHeight, Display::WHITE);
+        const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
+        m_display.drawRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
     }
 }
 
@@ -656,8 +764,10 @@ void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
     const int visibleHeight = visibleHistoryHeight(historySize(),
                                                    [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                                    m_historyScroll,
-                                                   viewportHeight);
-    const int contentHeight = std::max(1, viewportHeight + ROW_HEIGHT * maxScroll);
+                                                   viewportHeight,
+                                                   m_config.uiScale);
+    const int contentHeight = std::max(1,
+        viewportHeight + inputEntryHeight("", m_config.uiScale) * maxScroll);
     int scrollbarHeight = std::max(8,
         (viewportHeight * std::max(1, visibleHeight)) / contentHeight);
     int scrollbarY = HISTORY_TOP

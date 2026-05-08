@@ -35,6 +35,7 @@ struct Button {
 
 struct CalculatorAppConfig {
     bool showOnScreenKeypad = false;
+    int uiScale = 1;
 };
 
 class CalculatorApp {

@@ -18,12 +18,12 @@ if(PLATFORM STREQUAL "rp2350")
         message(FATAL_ERROR
             "PICO_SDK_PATH is not set.\n"
             "Set it via environment or CMake flag, for example:\n"
-            "  export PICO_SDK_PATH=$HOME/pico/pico-sdk\n"
-            "  cmake -S . -B build-rp2350 -DPLATFORM=rp2350 -DPICO_SDK_PATH=$HOME/pico/pico-sdk\n"
+            "export PICO_SDK_PATH=$HOME/pico-sdk\n"
+            "cmake -S . -B build-rp2350 -DPLATFORM=rp2350 -DPICO_SDK_PATH=$HOME/pico-sdk\n"
             "Fedora package note: install required toolchain packages first, then clone pico-sdk.")
     endif()
 
-    if(NOT EXISTS \"${PICO_SDK_PATH}/external/pico_sdk_import.cmake\")
+    if(NOT EXISTS "${PICO_SDK_PATH}/external/pico_sdk_import.cmake")
         message(FATAL_ERROR
             "PICO_SDK_PATH is set to '${PICO_SDK_PATH}', but pico_sdk_import.cmake was not found.\n"
             "Expected: ${PICO_SDK_PATH}/external/pico_sdk_import.cmake\n"

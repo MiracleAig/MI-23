@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
+
+#include "hal/keypad.h"
 #include "math/expression.h"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

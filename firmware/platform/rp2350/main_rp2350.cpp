@@ -26,6 +26,7 @@ const uint16_t COLOR_HOME_BG = Display::rgb(8, 10, 14);
 CalculatorAppConfig rpCalculatorConfig() {
     CalculatorAppConfig config;
     config.showOnScreenKeypad = false;
+    config.uiScale = 2;
     return config;
 }
 
