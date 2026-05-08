@@ -4,8 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
-#include "../firmware/math/expression.h"
-#include "hal/keypad.h"
+#include "math/expression.h"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -190,6 +189,51 @@ TEST(ExpressionParser, NestedParentheses) {
 TEST(ExpressionParser, DivisionByZero) {
     ExprResult r = evaluate("1/0");
     EXPECT_TRUE(!r.ok || std::isinf(r.value));
+}
+
+TEST(ExpressionParserEdgeCases, MalformedDecimalDoubleDot) {
+    EXPECT_EVAL_ERROR("1..2");
+}
+
+TEST(ExpressionParserEdgeCases, MalformedDecimalSingleDot) {
+    EXPECT_EVAL_ERROR(".");
+}
+
+TEST(ExpressionParserEdgeCases, TrailingDotParsesAsWholeNumber) {
+    EXPECT_EVAL("2.", 2.0f);
+}
+
+TEST(ExpressionParserEdgeCases, ChainedOperatorsPlusMinus) {
+    EXPECT_EVAL("1+-2", -1.0f);
+}
+
+TEST(ExpressionParserEdgeCases, ChainedOperatorsDoubleMinus) {
+    EXPECT_EVAL("1--2", 3.0f);
+}
+
+TEST(ExpressionParserEdgeCases, DoubleUnaryMinus) {
+    EXPECT_EVAL("--2", 2.0f);
+}
+
+TEST(ExpressionParserEdgeCases, FunctionNamePrefixIsRejected) {
+    EXPECT_EVAL_ERROR("sine(1)");
+}
+
+TEST(ExpressionParserEdgeCases, BareFunctionNameIsRejected) {
+    EXPECT_EVAL_ERROR("sin");
+    EXPECT_EVAL_ERROR("ln");
+    EXPECT_EVAL_ERROR("log");
+}
+
+TEST(ExpressionParserEdgeCases, ImplicitMultiplicationScenarios) {
+    EXPECT_EVAL("2(3+4)", 14.0f);
+    EXPECT_EVAL("2sin(3)", 2.0f * std::sin(3.0f));
+    EXPECT_EVAL("(1+2)(3+4)", 21.0f);
+}
+
+TEST(ExpressionParserEdgeCases, LargePowerOverflows) {
+    ExprResult r = evaluate("999999^999");
+    EXPECT_TRUE(!r.ok || !std::isfinite(r.value));
 }
 
 // ── Pi constant tests ─────────────────────────────────────────────────────────

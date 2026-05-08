@@ -5,10 +5,10 @@
 #pragma once
 
 #include "history.h"
+#include "hal/display.h"
+#include "hal/keypad.h"
 #include "math/math_typeset.h"
-#include "platform/host/display_sdl.h"
-#include "platform/host/keypad_host.h"
-#include <vector>
+#include <array>
 
 static constexpr int MARGIN       = 5;
 static constexpr int ROW_HEIGHT   = 20;
@@ -36,10 +36,11 @@ struct Button {
 
 class CalculatorApp {
 public:
-    CalculatorApp(DisplaySDL& display, KeypadHost& keypad);
+    static constexpr int MAX_HISTORY = 64;
+
+    CalculatorApp(Display& display, Keypad& keypad);
 
     void init();
-    void handleEvents();
     void update();
     void handleKey(Key pressed);
     void handlePointerDown(int logicalX, int logicalY);
@@ -47,8 +48,8 @@ public:
     void render();
 
 private:
-    DisplaySDL& m_display;
-    KeypadHost& m_keypad;
+    Display& m_display;
+    Keypad& m_keypad;
 
     char m_inputBuffer[128];
     char m_resultBuffer[64];
@@ -59,7 +60,9 @@ private:
     int  m_inputViewportX;
     bool m_awaitingNewInput;
 
-    std::vector<HistoryEntry> m_history;
+    std::array<HistoryEntry, MAX_HISTORY> m_history;
+    int m_historyCount;
+    int m_historyStart;
     int m_historyScroll;
 
     // Injected key from a mouse click — checked each update() tick
@@ -76,6 +79,8 @@ private:
                     bool usedMathLayout);
     void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();
+    int historySize() const;
+    const HistoryEntry& historyAt(int index) const;
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {

@@ -5,10 +5,9 @@
 #include "app/calculator/calculator_app.h"
 #include "math/expression.h"
 #include "math/math_typeset.h"
-#include "platform/host/display_sdl.h"
 #include "graphics/font.h"
-#include <SDL2/SDL.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -128,17 +127,19 @@ static int historyViewportHeightForInput(const char* input) {
     return std::max(0, HISTORY_HEIGHT - inputEntryHeight(input));
 }
 
-static int bottomHistoryScroll(const std::vector<HistoryEntry>& history,
+template <typename EntryGetter>
+static int bottomHistoryScroll(int historySize,
+                               EntryGetter getEntry,
                                int viewportHeight) {
     if (viewportHeight <= 0) {
-        return static_cast<int>(history.size());
+        return historySize;
     }
 
-    int scrollIndex = static_cast<int>(history.size());
+    int scrollIndex = historySize;
     int usedHeight = 0;
 
     while (scrollIndex > 0) {
-        const int entryHeight = historyEntryHeight(history[scrollIndex - 1]);
+        const int entryHeight = historyEntryHeight(getEntry(scrollIndex - 1));
         if (usedHeight + entryHeight > viewportHeight) {
             break;
         }
@@ -153,7 +154,9 @@ static int bottomHistoryScroll(const std::vector<HistoryEntry>& history,
     return scrollIndex;
 }
 
-static int visibleHistoryHeight(const std::vector<HistoryEntry>& history,
+template <typename EntryGetter>
+static int visibleHistoryHeight(int historySize,
+                                EntryGetter getEntry,
                                 int scrollIndex,
                                 int viewportHeight) {
     if (viewportHeight <= 0) {
@@ -162,8 +165,8 @@ static int visibleHistoryHeight(const std::vector<HistoryEntry>& history,
 
     int usedHeight = 0;
 
-    for (int i = scrollIndex; i < static_cast<int>(history.size()); i++) {
-        const int entryHeight = historyEntryHeight(history[i]);
+    for (int i = scrollIndex; i < historySize; i++) {
+        const int entryHeight = historyEntryHeight(getEntry(i));
         if (usedHeight + entryHeight > viewportHeight) {
             break;
         }
@@ -224,7 +227,7 @@ static void drawButtonRootIcon(Display& display,
 }
 
 
-CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
+CalculatorApp::CalculatorApp(Display& display, Keypad& keypad)
     : m_display(display)
     , m_keypad(keypad)
     , m_inputBuffer{}
@@ -235,6 +238,8 @@ CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
     , m_cursorPos(0)
     , m_inputViewportX(0)
     , m_awaitingNewInput(false)
+    , m_historyCount(0)
+    , m_historyStart(0)
     , m_historyScroll(0)
     , m_injectedKey(Key::NONE)
 {}
@@ -242,36 +247,6 @@ CalculatorApp::CalculatorApp(DisplaySDL& display, KeypadHost& keypad)
 void CalculatorApp::init() {
     m_display.init();
     m_keypad.init();
-}
-
-void CalculatorApp::handleEvents() {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT) {
-            m_display.setQuit();
-        }
-        if (event.type == SDL_KEYDOWN &&
-            event.key.keysym.sym == SDLK_ESCAPE) {
-            m_display.setQuit();
-        }
-        if (event.type == SDL_MOUSEWHEEL) {
-            m_historyScroll += (event.wheel.y > 0) ? -1 : 1;
-        }
-        // Mouse click — hit test against the button grid
-        if (event.type == SDL_MOUSEBUTTONDOWN &&
-            event.button.button == SDL_BUTTON_LEFT) {
-            // SDL mouse coords are in window pixels (640×480).
-            // Our renderer is scaled 2×, so divide by 2 to get logical coords.
-            int lx = event.button.x / 2;
-            int ly = event.button.y / 2;
-            const Button* btn = hitTest(lx, ly);
-            if (btn) {
-                m_injectedKey = btn->key;
-            }
-        }
-
-        m_keypad.handleEvent(event);
-    }
 }
 
 // ── Hit test ─────────────────────────────────────────────────────────────────
@@ -425,13 +400,28 @@ void CalculatorApp::processKey(Key pressed) {
 
 // ── History ──────────────────────────────────────────────────────────────────
 void CalculatorApp::pushHistory() {
-    int maxScrollBefore = bottomHistoryScroll(m_history, HISTORY_HEIGHT);
+    int maxScrollBefore = bottomHistoryScroll(historySize(),
+                                              [this](int i) -> const HistoryEntry& {
+                                                  return historyAt(i);
+                                              },
+                                              HISTORY_HEIGHT);
     bool wasNearBottom = (m_historyScroll >= std::max(0, maxScrollBefore - 1));
 
-    m_history.push_back({m_inputBuffer, m_resultBuffer, m_resultIsError});
+    if (m_historyCount < MAX_HISTORY) {
+        const int insertIndex = (m_historyStart + m_historyCount) % MAX_HISTORY;
+        m_history[insertIndex] = {m_inputBuffer, m_resultBuffer, m_resultIsError};
+        m_historyCount++;
+    } else {
+        m_history[m_historyStart] = {m_inputBuffer, m_resultBuffer, m_resultIsError};
+        m_historyStart = (m_historyStart + 1) % MAX_HISTORY;
+    }
 
     if (wasNearBottom) {
-        m_historyScroll = bottomHistoryScroll(m_history, HISTORY_HEIGHT);
+        m_historyScroll = bottomHistoryScroll(historySize(),
+                                              [this](int i) -> const HistoryEntry& {
+                                                  return historyAt(i);
+                                              },
+                                              HISTORY_HEIGHT);
     }
 
     m_inputLen        = 0;
@@ -445,7 +435,11 @@ void CalculatorApp::pushHistory() {
 void CalculatorApp::clampScroll() {
     if (m_historyScroll < 0) m_historyScroll = 0;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
-    int maxScroll = bottomHistoryScroll(m_history, historyViewportHeight);
+    int maxScroll = bottomHistoryScroll(historySize(),
+                                        [this](int i) -> const HistoryEntry& {
+                                            return historyAt(i);
+                                        },
+                                        historyViewportHeight);
     if (m_historyScroll > maxScroll) m_historyScroll = maxScroll;
 }
 
@@ -466,8 +460,8 @@ void CalculatorApp::drawHistory() {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
     const int historyBottom = HISTORY_TOP + historyViewportHeight;
 
-    for (int i = startIndex; i < static_cast<int>(m_history.size()); i++) {
-        const int entryHeight = historyEntryHeight(m_history[i]);
+    for (int i = startIndex; i < historySize(); i++) {
+        const int entryHeight = historyEntryHeight(historyAt(i));
         if (y >= historyBottom || y + entryHeight > historyBottom) {
             break;
         }
@@ -481,7 +475,7 @@ void CalculatorApp::drawHistory() {
         const int rowTop = y;
 
         math_typeset::LayoutMetrics historyMetrics{};
-        const bool measuredMath = math_typeset::measure(m_history[i].input.c_str(),
+        const bool measuredMath = math_typeset::measure(historyAt(i).input.c_str(),
                                                         historyMetrics);
         const float expressionScale = 1.0f;
         const int baselineY = measuredMath
@@ -489,28 +483,32 @@ void CalculatorApp::drawHistory() {
             : y + (FONT_CHAR_HEIGHT - 1);
 
         const bool drewMath = measuredMath &&
-                              math_typeset::drawScaled(m_history[i].input.c_str(),
+                              math_typeset::drawScaled(historyAt(i).input.c_str(),
                                                        m_display,
                                                        MARGIN,
                                                        baselineY,
                                                        Display::WHITE,
                                                        expressionScale);
         if (!drewMath) {
-            m_display.drawText(m_history[i].input.c_str(), MARGIN, y,
+            m_display.drawText(historyAt(i).input.c_str(), MARGIN, y,
                                Display::WHITE);
         }
 
         int resultX = DISPLAY_WIDTH
-                      - Display::textWidth(m_history[i].result.c_str())
+                      - Display::textWidth(historyAt(i).result.c_str())
                       - MARGIN;
         if (resultX < 0) resultX = 0;
-        m_display.drawText(m_history[i].result.c_str(), resultX, y + 8,
-                           m_history[i].isError ? Display::RED : Display::GREEN);
+        m_display.drawText(historyAt(i).result.c_str(), resultX, y + 8,
+                           historyAt(i).isError ? Display::RED : Display::GREEN);
 
         y += entryHeight;
     }
 
-    int maxScroll = bottomHistoryScroll(m_history, historyViewportHeight);
+    int maxScroll = bottomHistoryScroll(historySize(),
+                                        [this](int i) -> const HistoryEntry& {
+                                            return historyAt(i);
+                                        },
+                                        historyViewportHeight);
     if (maxScroll > 0) {
         drawScrollbar(maxScroll, historyViewportHeight);
     }
@@ -519,7 +517,10 @@ void CalculatorApp::drawHistory() {
 void CalculatorApp::drawInputRow() {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
     int inputY = HISTORY_TOP
-        + visibleHistoryHeight(m_history, m_historyScroll, historyViewportHeight);
+        + visibleHistoryHeight(historySize(),
+                               [this](int i) -> const HistoryEntry& { return historyAt(i); },
+                               m_historyScroll,
+                               historyViewportHeight);
 
     if (inputY > HISTORY_TOP) {
         m_display.drawRect(MARGIN, inputY - 2,
@@ -591,7 +592,9 @@ void CalculatorApp::drawCursor(int originX,
                                float expressionScale,
                                const math_typeset::LayoutMetrics& metrics,
                                bool usedMathLayout) {
-    bool showCursor = ((SDL_GetTicks() / 500) % 2) == 0;
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    const auto blinkMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    bool showCursor = ((blinkMs / 500) % 2) == 0;
     if (!showCursor) return;
 
     math_typeset::CursorMetrics cursorMetrics{};
@@ -628,7 +631,8 @@ void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
     }
 
     int scrollbarX = DISPLAY_WIDTH - 4;
-    const int visibleHeight = visibleHistoryHeight(m_history,
+    const int visibleHeight = visibleHistoryHeight(historySize(),
+                                                   [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                                    m_historyScroll,
                                                    viewportHeight);
     const int contentHeight = std::max(1, viewportHeight + ROW_HEIGHT * maxScroll);
@@ -681,4 +685,13 @@ void CalculatorApp::drawButtonGrid() {
             m_display.drawText(btn.label, labelX, labelY, COLOR_BTN_TEXT);
         }
     }
+}
+
+int CalculatorApp::historySize() const {
+    return m_historyCount;
+}
+
+const HistoryEntry& CalculatorApp::historyAt(int index) const {
+    const int slot = (m_historyStart + index) % MAX_HISTORY;
+    return m_history[slot];
 }
