@@ -123,8 +123,8 @@ static int inputEntryHeight(const char* input) {
     return ROW_HEIGHT;
 }
 
-static int historyViewportHeightForInput(const char* input) {
-    return std::max(0, HISTORY_HEIGHT - inputEntryHeight(input));
+static int historyViewportHeightForInput(const char* input, int historyHeight) {
+    return std::max(0, historyHeight - inputEntryHeight(input));
 }
 
 template <typename EntryGetter>
@@ -239,6 +239,10 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
     , m_cursorPos(0)
     , m_inputViewportX(0)
     , m_awaitingNewInput(false)
+    , m_historyBottom(config.showOnScreenKeypad
+        ? HISTORY_BOTTOM_WITH_KEYPAD
+        : (DISPLAY_HEIGHT - 4))
+    , m_historyHeight(m_historyBottom - HISTORY_TOP)
     , m_historyCount(0)
     , m_historyStart(0)
     , m_historyScroll(0)
@@ -409,7 +413,7 @@ void CalculatorApp::pushHistory() {
                                               [this](int i) -> const HistoryEntry& {
                                                   return historyAt(i);
                                               },
-                                              HISTORY_HEIGHT);
+                                              m_historyHeight);
     bool wasNearBottom = (m_historyScroll >= std::max(0, maxScrollBefore - 1));
 
     if (m_historyCount < MAX_HISTORY) {
@@ -426,7 +430,7 @@ void CalculatorApp::pushHistory() {
                                               [this](int i) -> const HistoryEntry& {
                                                   return historyAt(i);
                                               },
-                                              HISTORY_HEIGHT);
+                                              m_historyHeight);
     }
 
     m_inputLen        = 0;
@@ -439,7 +443,8 @@ void CalculatorApp::pushHistory() {
 
 void CalculatorApp::clampScroll() {
     if (m_historyScroll < 0) m_historyScroll = 0;
-    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
+    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
+                                                                    m_historyHeight);
     int maxScroll = bottomHistoryScroll(historySize(),
                                         [this](int i) -> const HistoryEntry& {
                                             return historyAt(i);
@@ -454,7 +459,7 @@ void CalculatorApp::render() {
         return;
     }
     m_display.clear(Display::BLACK);
-    m_display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, HISTORY_HEIGHT,
+    m_display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
                        COLOR_HISTORY_BG);
     drawHistory();
     drawInputRow();
@@ -472,7 +477,8 @@ void CalculatorApp::requestRender() {
 void CalculatorApp::drawHistory() {
     int startIndex = m_historyScroll;
     int y = HISTORY_TOP;
-    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
+    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
+                                                                    m_historyHeight);
     const int historyBottom = HISTORY_TOP + historyViewportHeight;
 
     for (int i = startIndex; i < historySize(); i++) {
@@ -530,7 +536,8 @@ void CalculatorApp::drawHistory() {
 }
 
 void CalculatorApp::drawInputRow() {
-    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer);
+    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
+                                                                    m_historyHeight);
     int inputY = HISTORY_TOP
         + visibleHistoryHeight(historySize(),
                                [this](int i) -> const HistoryEntry& { return historyAt(i); },

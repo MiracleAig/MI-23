@@ -13,8 +13,7 @@
 static constexpr int MARGIN       = 5;
 static constexpr int ROW_HEIGHT   = 20;
 static constexpr int HISTORY_TOP  = 4;
-static constexpr int HISTORY_BOTTOM = 100;
-static constexpr int HISTORY_HEIGHT = HISTORY_BOTTOM - HISTORY_TOP;
+static constexpr int HISTORY_BOTTOM_WITH_KEYPAD = 100;
 
 static const uint16_t COLOR_HISTORY_BG   = Display::rgb(10, 10, 18);
 static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
@@ -65,6 +64,8 @@ private:
     int  m_cursorPos;          // NEW — index within m_inputBuffer
     int  m_inputViewportX;
     bool m_awaitingNewInput;
+    int m_historyBottom;
+    int m_historyHeight;
 
     std::array<HistoryEntry, MAX_HISTORY> m_history;
     int m_historyCount;
