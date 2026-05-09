@@ -8,10 +8,10 @@
 class NullDisplay : public Display {
 public:
     void init() override {}
-    void clear(uint16_t) override {}
-    void drawPixel(int, int, uint16_t) override {}
-    void drawRect(int, int, int, int, uint16_t) override {}
-    void drawText(const char*, int, int, uint16_t) override {}
+    void clear(Color) override {}
+    void drawPixel(int, int, Color) override {}
+    void fillRect(int, int, int, int, Color) override {}
+    void drawText(const char*, int, int, Color) override {}
     void present() override {}
 };
 
@@ -19,7 +19,7 @@ class RectTrackingDisplay : public NullDisplay {
 public:
     int maxRectHeight = 0;
 
-    void drawRect(int, int, int, int h, uint16_t) override {
+    void fillRect(int, int, int, int h, Color) override {
         maxRectHeight = std::max(maxRectHeight, h);
     }
 };

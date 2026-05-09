@@ -1,0 +1,8 @@
+#pragma once
+
+#include "hal/display.h"
+
+static constexpr int SIMULATOR_KEYPAD_HEIGHT = 180;
+static constexpr int SIMULATOR_WINDOW_WIDTH = DISPLAY_WIDTH;
+static constexpr int SIMULATOR_WINDOW_HEIGHT = DISPLAY_HEIGHT + SIMULATOR_KEYPAD_HEIGHT;
+static constexpr int SIMULATOR_KEYPAD_Y = SIMULATOR_WINDOW_HEIGHT - SIMULATOR_KEYPAD_HEIGHT;

@@ -7,8 +7,12 @@ include(GoogleTest)
 enable_testing()
 
 add_executable(mi23_tests
+        test_display_primitives.cpp
         test_expression.cpp
+        test_graph_renderer.cpp
         test_math_typeset.cpp
+        ../firmware/app/graphing/graph_app.cpp
+        ../firmware/app/graphing/graph_renderer.cpp
 )
 
 target_include_directories(mi23_tests

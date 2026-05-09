@@ -15,6 +15,10 @@ if(PLATFORM STREQUAL "host")
             app/calculator/calculator_app.cpp
             app/calculator/calculator_app.h
             app/calculator/history.h
+            app/graphing/graph_app.cpp
+            app/graphing/graph_app.h
+            app/graphing/graph_renderer.cpp
+            app/graphing/graph_renderer.h
             graphics/font.h
             hal/display.h
             hal/keypad.h

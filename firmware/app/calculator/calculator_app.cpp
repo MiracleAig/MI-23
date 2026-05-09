@@ -62,7 +62,7 @@ static void drawPlainTextScaled(Display& display,
             const uint8_t columnBits = glyph[col];
             for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
                 if ((columnBits >> row) & 1U) {
-                    display.drawRect(cursorX + col * normalized,
+                    display.fillRect(cursorX + col * normalized,
                                      y + row * normalized,
                                      normalized,
                                      normalized,
@@ -299,8 +299,8 @@ static void drawButtonRootIcon(Display& display,
     display.drawPixel(hookX + 2, baseline, color);
     display.drawPixel(hookX + 3, baseline - 1, color);
     display.drawPixel(hookX + 4, baseline - 3, color);
-    display.drawRect(stemX, top + 1, 1, baseline - top - 3, color);
-    display.drawRect(stemX, top, radicalWidth - 5, 1, color);
+    display.fillRect(stemX, top + 1, 1, baseline - top - 3, color);
+    display.fillRect(stemX, top, radicalWidth - 5, 1, color);
 }
 
 
@@ -540,7 +540,7 @@ void CalculatorApp::render() {
         return;
     }
     m_display.clear(Display::BLACK);
-    m_display.drawRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
+    m_display.fillRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
                        COLOR_HISTORY_BG);
     drawHistory();
     drawInputRow();
@@ -570,7 +570,7 @@ void CalculatorApp::drawHistory() {
         }
 
         if (y > HISTORY_TOP) {
-            m_display.drawRect(MARGIN, y - 2,
+            m_display.fillRect(MARGIN, y - 2,
                                DISPLAY_WIDTH - MARGIN * 2, 1,
                                COLOR_SEPARATOR);
         }
@@ -642,7 +642,7 @@ void CalculatorApp::drawInputRow() {
                                m_config.uiScale);
 
     if (inputY > HISTORY_TOP) {
-        m_display.drawRect(MARGIN, inputY - 2,
+        m_display.fillRect(MARGIN, inputY - 2,
                            DISPLAY_WIDTH - MARGIN * 2, 1,
                            COLOR_SEPARATOR);
     }
@@ -751,7 +751,7 @@ void CalculatorApp::drawCursor(int originX,
 
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
         const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
-        m_display.drawRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
+        m_display.fillRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
     }
 }
 
@@ -774,9 +774,9 @@ void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
         + ((viewportHeight - scrollbarHeight) * m_historyScroll)
             / std::max(1, maxScroll);
 
-    m_display.drawRect(scrollbarX, HISTORY_TOP, 3, viewportHeight,
+    m_display.fillRect(scrollbarX, HISTORY_TOP, 3, viewportHeight,
                        COLOR_SCROLLBAR_BG);
-    m_display.drawRect(scrollbarX, scrollbarY, 3, scrollbarHeight,
+    m_display.fillRect(scrollbarX, scrollbarY, 3, scrollbarHeight,
                        Display::WHITE);
 }
 
@@ -799,7 +799,7 @@ void CalculatorApp::drawButtonGrid() {
                 bgColor = COLOR_BTN_NORMAL;
             }
 
-            m_display.drawRect(x, y, BTN_W, BTN_H, bgColor);
+            m_display.fillRect(x, y, BTN_W, BTN_H, bgColor);
 
             if (btn.key == Key::SQRT || btn.key == Key::ROOT) {
                 drawButtonRootIcon(m_display,

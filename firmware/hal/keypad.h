@@ -24,6 +24,7 @@ enum class Key {
    PERCENT     = 0x25,
    FACTORIAL   = 0x21,
    E_CONST     = 0x65,
+   X_VAR       = 0x78,
    // Action keys — above 0x80 so they never collide with printable ASCII
    ENTER       = 0x80,
    CLEAR       = 0x81,

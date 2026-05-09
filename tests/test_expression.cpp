@@ -238,6 +238,63 @@ TEST(ExpressionParserEdgeCases, LargePowerOverflows) {
     EXPECT_TRUE(!r.ok || !std::isfinite(r.value));
 }
 
+TEST(ExpressionParserVariableX, VariableAloneUsesProvidedValue) {
+    ExprResult r = evaluateWithX("x", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 3.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInAddition) {
+    ExprResult r = evaluateWithX("x+2", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 5.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInExplicitMultiplication) {
+    ExprResult r = evaluateWithX("2*x", 4.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 8.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInImplicitMultiplication) {
+    ExprResult r = evaluateWithX("2x+1", 4.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 9.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableWithPower) {
+    ExprResult r = evaluateWithX("x^2", 5.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 25.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInGroupedExpression) {
+    ExprResult r = evaluateWithX("(x+1)*(x-1)", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 8.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInFunctionArgument) {
+    ExprResult r = evaluateWithX("sin(x)", 0.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 0.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, UppercaseXUsesProvidedValue) {
+    ExprResult r = evaluateWithX("X+2", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 5.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, ExistingCalculatorEvaluationStillWorks) {
+    EXPECT_EVAL("2+3", 5.0f);
+}
+
+TEST(ExpressionParserVariableX, NormalEvaluationRejectsUndefinedX) {
+    ExprResult r = evaluate("x+1");
+    EXPECT_FALSE(r.ok);
+}
+
 // ── Pi constant tests ─────────────────────────────────────────────────────────
 
 // π alone should evaluate to 3.14159...

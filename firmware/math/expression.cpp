@@ -60,6 +60,10 @@ static bool isUnaryFunction(TokenType type) {
     }
 }
 
+static bool isAsciiAlpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
 static bool matchFunction(const char* expr, int len, int index,
                           TokenType& type, int& matchLength) {
     for (const FunctionSpec& spec : FUNCTION_SPECS) {
@@ -67,6 +71,10 @@ static bool matchFunction(const char* expr, int len, int index,
             continue;
         }
         if (strncmp(&expr[index], spec.name, spec.length) == 0) {
+            if (index + spec.length < len &&
+                isAsciiAlpha(expr[index + spec.length])) {
+                continue;
+            }
             type = spec.type;
             matchLength = spec.length;
             return true;
@@ -214,6 +222,7 @@ static ExprResult evalUnary(TokenType type, float value) {
 
 static bool canEndValue(TokenType type) {
     return type == TokenType::NUMBER ||
+           type == TokenType::VARIABLE_X ||
            type == TokenType::PAREN_CLOSE ||
            type == TokenType::OP_PERCENT ||
            type == TokenType::OP_FACTORIAL;
@@ -221,6 +230,7 @@ static bool canEndValue(TokenType type) {
 
 static bool canStartValue(TokenType type) {
     return type == TokenType::NUMBER ||
+           type == TokenType::VARIABLE_X ||
            type == TokenType::PAREN_OPEN ||
            isUnaryFunction(type);
 }
@@ -317,6 +327,20 @@ static int tokenize(const char* expr, Token* tokens, float ansValue) {
             continue;
         }
 
+        if (c == 'x' || c == 'X') {
+            if (hasPreviousToken && canEndValue(previousType)) {
+                if (count >= MAX_TOKENS) return -1;
+                tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
+            }
+            if (count >= MAX_TOKENS) return -1;
+            tokens[count++] = { TokenType::VARIABLE_X, 0.0f };
+            previousType = TokenType::VARIABLE_X;
+            hasPreviousToken = true;
+            expectUnary = false;
+            i++;
+            continue;
+        }
+
         if ((c >= '0' && c <= '9') || c == '.') {
             if (hasPreviousToken && canEndValue(previousType)) {
                 if (count >= MAX_TOKENS) return -1;
@@ -343,6 +367,8 @@ static int tokenize(const char* expr, Token* tokens, float ansValue) {
                 } else if (d == '.' && !inDecimal) {
                     inDecimal = true;
                     i++;
+                } else if (d == '.') {
+                    return -1;
                 } else {
                     break;
                 }
@@ -483,7 +509,8 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
     for (int i = 0; i < infixCount; i++) {
         const Token& token = infix[i];
 
-        if (token.type == TokenType::NUMBER) {
+        if (token.type == TokenType::NUMBER ||
+            token.type == TokenType::VARIABLE_X) {
             if (outCount >= MAX_TOKENS) { return -1; }
             postfix[outCount++] = token;
         } else if (isOperator(token.type)) {
@@ -559,7 +586,7 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
  *         `value` field. If an error occurs, such as insufficient operands or division by zero,
  *         the `ok` field is false, and the `error` field contains a human-readable error message.
  */
-static ExprResult evalPostfix(const Token* postfix, int count) {
+static ExprResult evalPostfix(const Token* postfix, int count, bool hasXValue, float xValue) {
     float valStack[MAX_STACK];
     int valTop = 0;
 
@@ -568,6 +595,12 @@ static ExprResult evalPostfix(const Token* postfix, int count) {
         if (token.type == TokenType::NUMBER) {
             if (valTop >= MAX_STACK) return {false, 0, "Stack overflow"};
             valStack[valTop++] = token.value;
+        } else if (token.type == TokenType::VARIABLE_X) {
+            if (!hasXValue) {
+                return {false, 0, "Undefined variable x"};
+            }
+            if (valTop >= MAX_STACK) return {false, 0, "Stack overflow"};
+            valStack[valTop++] = xValue;
         } else if (isUnaryEvalOperator(token.type)) {
             if (valTop < 1) return {false, 0, "Not enough operands"};
             if (token.type == TokenType::OP_PERCENT) {
@@ -653,7 +686,10 @@ ExprResult evaluate(const char* expr) {
     return evaluate(expr, 0.0f);
 }
 
-ExprResult evaluate(const char* expr, float ansValue) {
+static ExprResult evaluateInternal(const char* expr,
+                                   float ansValue,
+                                   bool hasXValue,
+                                   float xValue) {
 
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];
@@ -665,5 +701,17 @@ ExprResult evaluate(const char* expr, float ansValue) {
     int postfixCount = shuntingYard(infix, infixCount, postfix);
     if (postfixCount < 0) return {false, 0, "Invalid expression"};
 
-    return evalPostfix(postfix, postfixCount);
+    return evalPostfix(postfix, postfixCount, hasXValue, xValue);
+}
+
+ExprResult evaluate(const char* expr, float ansValue) {
+    return evaluateInternal(expr, ansValue, false, 0.0f);
+}
+
+ExprResult evaluateWithX(const char* expr, float xValue) {
+    return evaluateInternal(expr, 0.0f, true, xValue);
+}
+
+ExprResult evaluateWithX(const char* expr, float ansValue, float xValue) {
+    return evaluateInternal(expr, ansValue, true, xValue);
 }

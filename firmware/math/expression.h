@@ -10,6 +10,7 @@ static const int MAX_STACK = 64;
 
 enum class TokenType {
     NUMBER,
+    VARIABLE_X,
     OP_PLUS,
     OP_MINUS,
     OP_MULTIPLY,
@@ -52,3 +53,5 @@ struct ExprResult {
 
 ExprResult evaluate(const char* expr);
 ExprResult evaluate(const char* expr, float ansValue);
+ExprResult evaluateWithX(const char* expr, float xValue);
+ExprResult evaluateWithX(const char* expr, float ansValue, float xValue);

@@ -13,14 +13,14 @@ public:
     ~DisplayRP2350() override = default;
 
     void init() override;
-    void clear(uint16_t color) override;
-    void drawPixel(int x, int y, uint16_t color) override;
-    void drawRect(int x, int y, int w, int h, uint16_t color) override;
-    void drawText(const char* text, int x, int y, uint16_t color) override;
-    void drawText(const char* text, int x, int y, uint16_t color, int scale);
+    void clear(Color color) override;
+    void drawPixel(int x, int y, Color color) override;
+    void fillRect(int x, int y, int w, int h, Color color) override;
+    void drawText(const char* text, int x, int y, Color color) override;
+    void drawText(const char* text, int x, int y, Color color, int scale);
     void present() override;
 
 private:
-    void drawChar(char c, int x, int y, uint16_t color, int scale);
+    void drawChar(char c, int x, int y, Color color, int scale);
     ST7789 m_display;
 };

@@ -110,6 +110,31 @@ void ST7789::drawPixel(int16_t x, int16_t y, uint16_t color) {
 }
 
 void ST7789::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    if (x < 0) {
+        w += x;
+        x = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y = 0;
+    }
+    if (x >= ST7789_WIDTH || y >= ST7789_HEIGHT) {
+        return;
+    }
+    if (x + w > ST7789_WIDTH) {
+        w = ST7789_WIDTH - x;
+    }
+    if (y + h > ST7789_HEIGHT) {
+        h = ST7789_HEIGHT - y;
+    }
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
     setWindow(x, y, x + w - 1, y + h - 1);
     uint8_t hi = color >> 8;
     uint8_t lo = color & 0xFF;

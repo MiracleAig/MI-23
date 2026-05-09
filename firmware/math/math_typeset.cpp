@@ -666,7 +666,7 @@ static void drawCharScaled(Display& display,
                 const int scaledX = x + scaleLength(col, scale);
                 const int scaledY = y + scaleLength(row, scale);
                 const int pixelSize = std::max(1, scaleLength(1, scale));
-                display.drawRect(scaledX, scaledY, pixelSize, pixelSize, color);
+                display.fillRect(scaledX, scaledY, pixelSize, pixelSize, color);
             }
         }
     }
@@ -697,10 +697,10 @@ static void drawTallParen(Display& display,
     const int strokeX = x + scaleLength(leftParen ? 1 : FONT_CHAR_WIDTH - 2, scale);
     const int capInnerX = x + scaleLength(leftParen ? 2 : FONT_CHAR_WIDTH - 3, scale);
     const int bottom = top + height - 1;
-    display.drawRect(strokeX, top + strokeWidth, strokeWidth,
+    display.fillRect(strokeX, top + strokeWidth, strokeWidth,
                      std::max(strokeWidth, height - strokeWidth * 2), color);
-    display.drawRect(capInnerX, top, strokeWidth, strokeWidth, color);
-    display.drawRect(capInnerX, bottom - strokeWidth + 1,
+    display.fillRect(capInnerX, top, strokeWidth, strokeWidth, color);
+    display.fillRect(capInnerX, bottom - strokeWidth + 1,
                      strokeWidth, strokeWidth, color);
 }
 
@@ -716,17 +716,17 @@ static void drawRootSymbol(Display& display,
     const int hookBottom = std::max(bottom, baselineY);
     const int stemX = x + scaleLength(4, scale);
     const int barY = top;
-    display.drawRect(x, hookBottom - scaleLength(2, scale),
+    display.fillRect(x, hookBottom - scaleLength(2, scale),
                      strokeWidth, strokeWidth, color);
-    display.drawRect(x + scaleLength(1, scale), hookBottom - scaleLength(1, scale),
+    display.fillRect(x + scaleLength(1, scale), hookBottom - scaleLength(1, scale),
                      strokeWidth, strokeWidth, color);
-    display.drawRect(x + scaleLength(2, scale), hookBottom,
+    display.fillRect(x + scaleLength(2, scale), hookBottom,
                      strokeWidth, strokeWidth, color);
-    display.drawRect(x + scaleLength(3, scale), hookBottom - scaleLength(1, scale),
+    display.fillRect(x + scaleLength(3, scale), hookBottom - scaleLength(1, scale),
                      strokeWidth, strokeWidth, color);
-    display.drawRect(stemX, barY + strokeWidth, strokeWidth,
+    display.fillRect(stemX, barY + strokeWidth, strokeWidth,
                      std::max(strokeWidth, hookBottom - barY), color);
-    display.drawRect(stemX, barY,
+    display.fillRect(stemX, barY,
                      std::max(strokeWidth, width - (stemX - x)),
                      strokeWidth, color);
 }
@@ -814,7 +814,7 @@ static void drawBoxRecursive(const Context& parseCtx,
 
         drawBoxRecursive(parseCtx, layout, numeratorNode, numeratorBox,
                          display, numeratorX, numeratorBaseline, color, scale);
-        display.drawRect(x, baselineY,
+        display.fillRect(x, baselineY,
                          std::max(1, scaledBoxWidth),
                          std::max(1, scaleLength(1, scale)),
                          color);

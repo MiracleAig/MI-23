@@ -52,6 +52,7 @@ void KeypadHost::handleEvent(const SDL_Event &event) {
         case SDLK_g:        m_currentKey = Key::LOG;      break;
         case SDLK_l:        m_currentKey = Key::LN;       break;
         case SDLK_r:        m_currentKey = Key::ROOT;     break;
+        case SDLK_x:        m_currentKey = Key::X_VAR;    break;
         case SDLK_RETURN:   m_currentKey = Key::ENTER;    break;
         case SDLK_BACKSPACE:m_currentKey = Key::CLEAR;    break;
         case SDLK_COMMA:    m_currentKey = Key::COMMA;    break;

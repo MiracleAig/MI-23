@@ -59,10 +59,10 @@ void drawOutline(Display& display,
                  int h,
                  uint16_t color,
                  int thickness = 1) {
-    display.drawRect(x, y, w, thickness, color);
-    display.drawRect(x, y + h - thickness, w, thickness, color);
-    display.drawRect(x, y, thickness, h, color);
-    display.drawRect(x + w - thickness, y, thickness, h, color);
+    display.fillRect(x, y, w, thickness, color);
+    display.fillRect(x, y + h - thickness, w, thickness, color);
+    display.fillRect(x, y, thickness, h, color);
+    display.fillRect(x + w - thickness, y, thickness, h, color);
 }
 
 void drawCenteredText(Display& display,
@@ -77,11 +77,11 @@ void drawCenteredText(Display& display,
 
 void drawCalculatorIcon(Display& display, int x, int y, uint16_t color) {
     drawOutline(display, x, y, 34, 32, color, 2);
-    display.drawRect(x + 5, y + 5, 24, 7, color);
+    display.fillRect(x + 5, y + 5, 24, 7, color);
 
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 3; col++) {
-            display.drawRect(x + 6 + col * 8,
+            display.fillRect(x + 6 + col * 8,
                              y + 16 + row * 5,
                              4,
                              3,
@@ -92,14 +92,14 @@ void drawCalculatorIcon(Display& display, int x, int y, uint16_t color) {
 
 void drawGraphingIcon(Display& display, int x, int y, uint16_t color) {
     drawOutline(display, x, y, 38, 32, color, 2);
-    display.drawRect(x + 7, y + 6, 2, 20, color);
-    display.drawRect(x + 7, y + 24, 24, 2, color);
+    display.fillRect(x + 7, y + 6, 2, 20, color);
+    display.fillRect(x + 7, y + 24, 24, 2, color);
 
-    display.drawRect(x + 11, y + 20, 3, 3, color);
-    display.drawRect(x + 15, y + 17, 3, 3, color);
-    display.drawRect(x + 19, y + 13, 3, 3, color);
-    display.drawRect(x + 23, y + 10, 3, 3, color);
-    display.drawRect(x + 27, y + 12, 3, 3, color);
+    display.fillRect(x + 11, y + 20, 3, 3, color);
+    display.fillRect(x + 15, y + 17, 3, 3, color);
+    display.fillRect(x + 19, y + 13, 3, 3, color);
+    display.fillRect(x + 23, y + 10, 3, 3, color);
+    display.fillRect(x + 27, y + 12, 3, 3, color);
 }
 
 void drawIcon(Display& display,
@@ -151,7 +151,7 @@ AppId HomeScreen::handleKey(Key key) {
 void HomeScreen::render() {
     m_display.clear(COLOR_BG);
 
-    m_display.drawRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
+    m_display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
     m_display.drawText("MI-23 Home", 8, 7, Display::WHITE);
     m_display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
                        COLOR_MUTED);
@@ -166,7 +166,7 @@ void HomeScreen::renderContent(int contentY, int contentHeight) {
 }
 
 void HomeScreen::renderContentArea(int contentY, int contentHeight) {
-    m_display.drawRect(0, contentY, DISPLAY_WIDTH, contentHeight, COLOR_BG);
+    m_display.fillRect(0, contentY, DISPLAY_WIDTH, contentHeight, COLOR_BG);
     m_display.drawText("Select an app", 8, contentY + 6, COLOR_MUTED);
 
     const int gridTop = contentY + 22;
@@ -178,7 +178,7 @@ void HomeScreen::renderContentArea(int contentY, int contentHeight) {
         const int y = gridTop + row * (TILE_H + TILE_GAP);
         const bool selected = i == m_selectedIndex;
 
-        m_display.drawRect(x, y, TILE_W, TILE_H,
+        m_display.fillRect(x, y, TILE_W, TILE_H,
                            selected ? COLOR_TILE_SELECTED : COLOR_TILE);
         drawOutline(m_display,
                     x,
@@ -188,14 +188,14 @@ void HomeScreen::renderContentArea(int contentY, int contentHeight) {
                     selected ? COLOR_FOCUS : COLOR_TILE_BORDER,
                     selected ? 3 : 1);
 
-        const uint16_t iconColor = selected ? Display::WHITE : COLOR_MUTED;
+        const uint16_t iconColor = selected ? Display::WHITE.rgb565() : COLOR_MUTED;
         drawIcon(m_display, HOME_APPS[i], x + TILE_W / 2, y + 11, iconColor);
         drawCenteredText(m_display,
                          HOME_APPS[i].label,
                          x,
                          y + TILE_H - FONT_CHAR_HEIGHT - 9,
                          TILE_W,
-                         selected ? Display::WHITE : COLOR_MUTED);
+                         selected ? Display::WHITE.rgb565() : COLOR_MUTED);
     }
 
     m_display.drawText("Arrows move   Enter open", 8, contentY + contentHeight - 20,

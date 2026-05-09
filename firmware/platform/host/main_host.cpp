@@ -4,61 +4,32 @@
 
 #include "platform/host/display_sdl.h"
 #include "platform/host/keypad_host.h"
+#include "platform/host/simulator_keypad.h"
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
+#include "app/graphing/graph_app.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 
 namespace {
 CalculatorAppConfig hostCalculatorConfig() {
     CalculatorAppConfig config;
-    config.showOnScreenKeypad = true;
+    config.showOnScreenKeypad = false;
     return config;
 }
 
 const uint16_t COLOR_BG = Display::rgb(8, 10, 14);
 const uint16_t COLOR_HEADER = Display::rgb(22, 35, 48);
 const uint16_t COLOR_MUTED = Display::rgb(150, 160, 172);
-const uint16_t COLOR_FOCUS = Display::rgb(255, 230, 95);
 
-void drawOutline(Display& display,
-                 int x,
-                 int y,
-                 int w,
-                 int h,
-                 uint16_t color,
-                 int thickness = 1) {
-    display.drawRect(x, y, w, thickness, color);
-    display.drawRect(x, y + h - thickness, w, thickness, color);
-    display.drawRect(x, y, thickness, h, color);
-    display.drawRect(x + w - thickness, y, thickness, h, color);
-}
-
-void renderGraphingPlaceholder(Display& display) {
+void renderGraphingApp(Display& display, GraphApp& graphApp) {
     display.clear(COLOR_BG);
-    display.drawRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
+    display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
     display.drawText("Graphing", 8, 7, Display::WHITE);
     display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
                      COLOR_MUTED);
 
-    const int iconX = DISPLAY_WIDTH / 2 - 38;
-    const int iconY = 62;
-    drawOutline(display, iconX, iconY, 76, 58, COLOR_FOCUS, 2);
-    display.drawRect(iconX + 16, iconY + 12, 2, 34, Display::WHITE);
-    display.drawRect(iconX + 16, iconY + 44, 44, 2, Display::WHITE);
-    display.drawRect(iconX + 22, iconY + 36, 4, 4, Display::WHITE);
-    display.drawRect(iconX + 30, iconY + 30, 4, 4, Display::WHITE);
-    display.drawRect(iconX + 38, iconY + 22, 4, 4, Display::WHITE);
-    display.drawRect(iconX + 46, iconY + 18, 4, 4, Display::WHITE);
-    display.drawRect(iconX + 54, iconY + 24, 4, 4, Display::WHITE);
-
-    display.drawText("Graphing", DISPLAY_WIDTH / 2 - Display::textWidth("Graphing") / 2,
-                     138, Display::WHITE);
-    display.drawText("Coming soon",
-                     DISPLAY_WIDTH / 2 - Display::textWidth("Coming soon") / 2,
-                     152, COLOR_MUTED);
-    display.drawText("Press Home to return", 8, DISPLAY_HEIGHT - 12, COLOR_MUTED);
-    display.present();
+    graphApp.renderContent(display, 0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
 }
 
 class HostAppController {
@@ -68,6 +39,7 @@ public:
         , m_keypad(keypad)
         , m_home(display)
         , m_calculator(display, keypad, hostCalculatorConfig())
+        , m_simulatorKeypad()
         , m_activeApp(AppId::Home)
     {}
 
@@ -92,10 +64,15 @@ public:
                 m_calculator.scrollHistory(event.wheel.y > 0 ? -1 : 1);
             }
             if (event.type == SDL_MOUSEBUTTONDOWN &&
-                event.button.button == SDL_BUTTON_LEFT &&
-                m_activeApp == AppId::Calculator) {
-                m_calculator.handlePointerDown(event.button.x / 2,
-                                               event.button.y / 2);
+                event.button.button == SDL_BUTTON_LEFT) {
+                const int logicalX = event.button.x / 2;
+                const int logicalY = event.button.y / 2;
+                const Key keypadKey = m_simulatorKeypad.hitTest(logicalX, logicalY);
+                if (keypadKey != Key::NONE) {
+                    dispatchKey(keypadKey);
+                } else if (m_activeApp == AppId::Calculator) {
+                    m_calculator.handlePointerDown(logicalX, logicalY);
+                }
             }
 
             m_keypad.handleEvent(event);
@@ -117,17 +94,27 @@ public:
             }
         } else if (m_activeApp == AppId::Calculator) {
             m_calculator.handleKey(pressed);
+        } else if (m_activeApp == AppId::Graphing) {
+            m_graph.handleKey(pressed);
         }
     }
 
     void render() {
+        m_display.setPresentEnabled(false);
+
         if (m_activeApp == AppId::Home) {
             m_home.render();
         } else if (m_activeApp == AppId::Calculator) {
+            m_calculator.requestRender();
             m_calculator.render();
         } else if (m_activeApp == AppId::Graphing) {
-            renderGraphingPlaceholder(m_display);
+            m_graph.requestRender();
+            renderGraphingApp(m_display, m_graph);
         }
+
+        m_simulatorKeypad.render(m_display);
+        m_display.setPresentEnabled(true);
+        m_display.forcePresent();
 
         SDL_Delay(16);
     }
@@ -137,7 +124,24 @@ private:
     KeypadHost& m_keypad;
     HomeScreen m_home;
     CalculatorApp m_calculator;
+    SimulatorKeypad m_simulatorKeypad;
+    GraphApp m_graph;
     AppId m_activeApp;
+
+    void dispatchKey(Key key) {
+        if (key == Key::HOME) {
+            goHome();
+        } else if (m_activeApp == AppId::Home) {
+            const AppId launchTarget = m_home.handleKey(key);
+            if (launchTarget != AppId::Home) {
+                launch(launchTarget);
+            }
+        } else if (m_activeApp == AppId::Calculator) {
+            m_calculator.handleKey(key);
+        } else if (m_activeApp == AppId::Graphing) {
+            m_graph.handleKey(key);
+        }
+    }
 
     void goHome() {
         if (m_activeApp != AppId::Home) {
@@ -151,6 +155,8 @@ private:
             m_activeApp = app;
             if (app == AppId::Calculator) {
                 m_calculator.requestRender();
+            } else if (app == AppId::Graphing) {
+                m_graph.enter();
             }
         }
     }

@@ -20,13 +20,14 @@ void DisplaySDL::init() {
         return;
     }
 
-    // Scale window size by 2 (640px X 480px)
+    // Scale window size by 2. Host gets extra simulator chrome below the
+    // calculator display for app-specific onscreen controls.
     m_window = SDL_CreateWindow(
         "Calculator Simulator",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        DISPLAY_WIDTH * 2,
-        DISPLAY_HEIGHT * 2,
+        SIMULATOR_WINDOW_WIDTH * 2,
+        SIMULATOR_WINDOW_HEIGHT * 2,
         SDL_WINDOW_SHOWN
     );
 
@@ -44,34 +45,64 @@ void DisplaySDL::init() {
 
     SDL_RenderSetScale(m_renderer, 2.0f, 2.0f);
 
-    printf("Display initialized: %dx%d\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    printf("Display initialized: %dx%d\n", SIMULATOR_WINDOW_WIDTH, SIMULATOR_WINDOW_HEIGHT);
 }
 
-static void setDrawColor(SDL_Renderer* r, uint16_t color) {
-    uint8_t red = ((color >> 11)    & 0x1F) << 3;
-    uint8_t green = ((color >> 5)   & 0x3F) << 2;
-    uint8_t blue = ((color)         & 0x1F) << 3;
+static void setDrawColor(SDL_Renderer* r, Color color) {
+    const uint16_t rgb565 = color.rgb565();
+    uint8_t red = ((rgb565 >> 11)    & 0x1F) << 3;
+    uint8_t green = ((rgb565 >> 5)   & 0x3F) << 2;
+    uint8_t blue = ((rgb565)         & 0x1F) << 3;
 
     SDL_SetRenderDrawColor(r, red, green, blue, 255);
 }
 
-void DisplaySDL::clear(uint16_t color) {
+void DisplaySDL::clear(Color color) {
     setDrawColor(m_renderer, color);
     SDL_RenderClear(m_renderer);
 }
 
-void DisplaySDL::drawPixel(int x, int y, uint16_t color) {
+void DisplaySDL::drawPixel(int x, int y, Color color) {
+    if (x < 0 || x >= SIMULATOR_WINDOW_WIDTH || y < 0 || y >= SIMULATOR_WINDOW_HEIGHT) {
+        return;
+    }
+
     setDrawColor(m_renderer, color);
     SDL_RenderDrawPoint(m_renderer, x, y);
 }
 
-void DisplaySDL::drawRect(int x, int y, int w, int h, uint16_t color) {
+void DisplaySDL::fillRect(int x, int y, int w, int h, Color color) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    if (x < 0) {
+        w += x;
+        x = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y = 0;
+    }
+    if (x >= SIMULATOR_WINDOW_WIDTH || y >= SIMULATOR_WINDOW_HEIGHT) {
+        return;
+    }
+    if (x + w > SIMULATOR_WINDOW_WIDTH) {
+        w = SIMULATOR_WINDOW_WIDTH - x;
+    }
+    if (y + h > SIMULATOR_WINDOW_HEIGHT) {
+        h = SIMULATOR_WINDOW_HEIGHT - y;
+    }
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
     setDrawColor(m_renderer, color);
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderFillRect(m_renderer, &rect);
 }
 
-void DisplaySDL::drawChar(char c, int x, int y, uint16_t color) {
+void DisplaySDL::drawChar(char c, int x, int y, Color color) {
     uint8_t ascii = static_cast<uint8_t>(c);
     const uint8_t* glyph = &FONT_DATA[ascii * FONT_CHAR_WIDTH];
     for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
@@ -84,7 +115,7 @@ void DisplaySDL::drawChar(char c, int x, int y, uint16_t color) {
     }
 }
 
-void DisplaySDL::drawText(const char* text, int x, int y, uint16_t color) {
+void DisplaySDL::drawText(const char* text, int x, int y, Color color) {
     int cursor_x = x;
     for (int i = 0; text[i] != '\0'; i++) {
         drawChar(text[i], cursor_x, y, color);  // bgColor argument removed
@@ -93,6 +124,16 @@ void DisplaySDL::drawText(const char* text, int x, int y, uint16_t color) {
 }
 
 void DisplaySDL::present() {
+    if (m_presentEnabled) {
+        SDL_RenderPresent(m_renderer);
+    }
+}
+
+void DisplaySDL::setPresentEnabled(bool enabled) {
+    m_presentEnabled = enabled;
+}
+
+void DisplaySDL::forcePresent() {
     SDL_RenderPresent(m_renderer);
 }
 

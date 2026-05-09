@@ -6,6 +6,7 @@
 #include "display_rp2350.h"
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
+#include "app/graphing/graph_app.h"
 #include "platform/rp2350/keypad_rp2350.h"
 #include "keypad_rp2350_2.h"
 #include <cstdio>
@@ -78,17 +79,17 @@ void drawBatteryIndicator(DisplayRP2350& display) {
     const int iconY = (HEADER_HEIGHT - iconH) / 2;
     const int fillW = (iconW - 4) * level / 100;
 
-    display.drawRect(iconX, iconY, iconW, 1, COLOR_HEADER_TEXT);
-    display.drawRect(iconX, iconY + iconH - 1, iconW, 1, COLOR_HEADER_TEXT);
-    display.drawRect(iconX, iconY, 1, iconH, COLOR_HEADER_TEXT);
-    display.drawRect(iconX + iconW - 1, iconY, 1, iconH, COLOR_HEADER_TEXT);
-    display.drawRect(iconX + iconW, iconY + 3, 2, 4, COLOR_HEADER_TEXT);
-    display.drawRect(iconX + 2, iconY + 2, fillW, iconH - 4, Display::GREEN);
+    display.fillRect(iconX, iconY, iconW, 1, COLOR_HEADER_TEXT);
+    display.fillRect(iconX, iconY + iconH - 1, iconW, 1, COLOR_HEADER_TEXT);
+    display.fillRect(iconX, iconY, 1, iconH, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + iconW - 1, iconY, 1, iconH, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + iconW, iconY + 3, 2, 4, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + 2, iconY + 2, fillW, iconH - 4, Display::GREEN);
     display.drawText(label, labelX, 7, COLOR_HEADER_TEXT);
 }
 
 void drawGlobalHeader(DisplayRP2350& display, AppId app) {
-    display.drawRect(0, 0, SCREEN_W, HEADER_HEIGHT, COLOR_HEADER_BG);
+    display.fillRect(0, 0, SCREEN_W, HEADER_HEIGHT, COLOR_HEADER_BG);
     display.drawText(appTitle(app), 8, 7, COLOR_HEADER_TEXT);
     display.drawText("DEG", SCREEN_W / 2 - Display::textWidth("DEG") / 2, 7,
                      COLOR_HEADER_MUTED);
@@ -98,8 +99,16 @@ void drawGlobalHeader(DisplayRP2350& display, AppId app) {
 void renderHome(DisplayRP2350& display, HomeScreen& home) {
     display.clear(Display::BLACK);
     drawGlobalHeader(display, AppId::Home);
-    display.drawRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
+    display.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
     home.renderContent(CONTENT_Y, CONTENT_H);
+}
+
+void renderGraphingApp(DisplayRP2350& display, GraphApp& graphApp) {
+    display.clear(Display::BLACK);
+    drawGlobalHeader(display, AppId::Graphing);
+    display.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
+    graphApp.renderContent(display, 0, CONTENT_Y, SCREEN_W, CONTENT_H);
+    display.present();
 }
 
 class RP2350AppController {
@@ -153,17 +162,12 @@ public:
             return;
         }
 
-        // Graphing placeholder until graphing app exists.
-        if (m_activeApp == AppId::Graphing && pressed != Key::NONE) {
-            m_display.clear(Display::BLACK);
-            drawGlobalHeader(m_display, AppId::Graphing);
-            m_display.drawRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
-            m_display.drawText("Graphing", SCREEN_W / 2 - Display::textWidth("Graphing") / 2,
-                               118, Display::WHITE);
-            m_display.drawText("Coming soon", SCREEN_W / 2 - Display::textWidth("Coming soon") / 2,
-                               132, COLOR_HEADER_MUTED);
-            m_display.drawText("Press Home to return", 8, SCREEN_H - 12, COLOR_HEADER_MUTED);
-            m_display.present();
+        if (m_activeApp == AppId::Graphing) {
+            m_graph.handleKey(pressed);
+            if (m_graph.needsRender()) {
+                renderGraphingApp(m_display, m_graph);
+            }
+            return;
         }
     }
 
@@ -172,6 +176,7 @@ private:
     Keypad& m_keypad;
     HomeScreen& m_home;
     CalculatorApp& m_calculator;
+    GraphApp m_graph;
     AppId m_activeApp;
     bool m_waitingForRelease;
 
@@ -190,6 +195,8 @@ private:
             m_calculator.render();
         } else if (app == AppId::Graphing) {
             m_activeApp = AppId::Graphing;
+            m_graph.enter();
+            renderGraphingApp(m_display, m_graph);
         }
     }
 };
