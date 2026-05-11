@@ -12,12 +12,18 @@ if(PLATFORM STREQUAL "host")
     )
 
     add_library(calculator_app STATIC
-            app/calculator_app.cpp
-            app/calculator_app.h
-            app/history.h
+            app/calculator/calculator_app.cpp
+            app/calculator/calculator_app.h
+            app/calculator/history.h
+            app/graphing/graph_app.cpp
+            app/graphing/graph_app.h
+            app/graphing/graph_renderer.cpp
+            app/graphing/graph_renderer.h
             graphics/font.h
             hal/display.h
             hal/keypad.h
+            app/home/calculator_home.cpp
+            app/home/calculator_home.h
     )
 
     target_link_libraries(calculator_app

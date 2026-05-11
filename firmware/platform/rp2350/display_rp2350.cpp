@@ -15,23 +15,23 @@ void DisplayRP2350::init() {
     clear(Display::BLACK);
 }
 
-void DisplayRP2350::clear(uint16_t color) {
+void DisplayRP2350::clear(Color color) {
     // Note: DISPLAY_WIDTH and DISPLAY_HEIGHT in display.h are 320x240
     // (landscape) but the ST7789 is physically 240x320 (portrait).
     // We swap them here so the rest of the codebase sees a landscape display
     // matching the simulator, without changing anything else.
-    m_display.fillRect(0, 0, ST7789_WIDTH, ST7789_HEIGHT, color);
+    m_display.fillRect(0, 0, ST7789_WIDTH, ST7789_HEIGHT, color.rgb565());
 }
 
-void DisplayRP2350::drawPixel(int x, int y, uint16_t color) {
-    m_display.drawPixel(x, y, color);
+void DisplayRP2350::drawPixel(int x, int y, Color color) {
+    m_display.drawPixel(x, y, color.rgb565());
 }
 
-void DisplayRP2350::drawRect(int x, int y, int w, int h, uint16_t color) {
-    m_display.fillRect(x, y, w, h, color);
+void DisplayRP2350::fillRect(int x, int y, int w, int h, Color color) {
+    m_display.fillRect(x, y, w, h, color.rgb565());
 }
 
-void DisplayRP2350::drawChar(char c, int x, int y, uint16_t color, int scale) {
+void DisplayRP2350::drawChar(char c, int x, int y, Color color, int scale) {
     uint8_t idx = (uint8_t)c;
     const uint8_t* bitmap = &FONT_DATA[idx * FONT_CHAR_WIDTH];
 
@@ -44,18 +44,18 @@ void DisplayRP2350::drawChar(char c, int x, int y, uint16_t color, int scale) {
                     x + col * scale,
                     y + row * scale,
                     scale, scale,
-                    color
+                    color.rgb565()
                 );
             }
         }
     }
 }
 
-void DisplayRP2350::drawText(const char* text, int x, int y, uint16_t color) {
+void DisplayRP2350::drawText(const char* text, int x, int y, Color color) {
     drawText(text, x, y, color, 1);
 }
 
-void DisplayRP2350::drawText(const char* text, int x, int y, uint16_t color, int scale) {
+void DisplayRP2350::drawText(const char* text, int x, int y, Color color, int scale) {
     int cursorX = x;
     while (*text) {
         drawChar(*text, cursorX, y, color, scale);

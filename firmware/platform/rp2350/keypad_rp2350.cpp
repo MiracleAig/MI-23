@@ -150,7 +150,7 @@ Key KeypadRP2350::mapKey(int row, int col) {
     static const Key TABLE[4][4] = {
         { Key::NUM_1, Key::NUM_2, Key::NUM_3, Key::ENTER  },
         { Key::NUM_4, Key::NUM_5, Key::NUM_6, Key::CLEAR  },
-        { Key::NUM_7, Key::NUM_8, Key::NUM_9, Key::ESCAPE },
+        { Key::NUM_7, Key::NUM_8, Key::NUM_9, Key::HOME   },
         { Key::PLUS,  Key::NUM_0, Key::DOT,   Key::MINUS  },
     };
     // clang-format on

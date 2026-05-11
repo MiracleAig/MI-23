@@ -4,8 +4,9 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
-#include "../firmware/math/expression.h"
+
 #include "hal/keypad.h"
+#include "math/expression.h"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,118 @@ TEST(ExpressionParser, Power) {
     EXPECT_EVAL("2^3", 8.0f);
 }
 
+TEST(ExpressionParser, PercentStandalone) {
+    EXPECT_EVAL("50%", 0.5f);
+}
+
+TEST(ExpressionParser, PercentInMultiplication) {
+    EXPECT_EVAL("200*10%", 20.0f);
+}
+
+TEST(ExpressionParser, PercentAfterParentheses) {
+    EXPECT_EVAL("(20+30)%", 0.5f);
+}
+
+TEST(ExpressionParser, PercentThenSubtraction) {
+    EXPECT_EVAL("50%-1", -0.5f);
+}
+
+TEST(ExpressionParser, FactorialBasic) {
+    EXPECT_EVAL("5!", 120.0f);
+}
+
+TEST(ExpressionParser, FactorialZero) {
+    EXPECT_EVAL("0!", 1.0f);
+}
+
+TEST(ExpressionParser, FactorialAfterParentheses) {
+    EXPECT_EVAL("(3+2)!", 120.0f);
+}
+
+TEST(ExpressionParser, FactorialPrecedenceOverPower) {
+    EXPECT_EVAL("2^3!", 64.0f);
+}
+
+TEST(ExpressionParser, DoubleFactorial) {
+    EXPECT_EVAL("3!!", 720.0f);
+}
+
+TEST(ExpressionParser, FactorialDomainErrorForFractionalInput) {
+    ExprResult r = evaluate("5.5!");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Factorial domain error");
+}
+
+TEST(ExpressionParser, EulerConstantAlone) {
+    EXPECT_EVAL("e", std::exp(1.0f));
+}
+
+TEST(ExpressionParser, UppercaseEulerConstantAlone) {
+    EXPECT_EVAL("E", std::exp(1.0f));
+}
+
+TEST(ExpressionParser, EulerConstantImplicitMultiplyBefore) {
+    EXPECT_EVAL("2e", 2.0f * std::exp(1.0f));
+}
+
+TEST(ExpressionParser, EulerConstantImplicitMultiplyAfter) {
+    EXPECT_EVAL("e2", 2.0f * std::exp(1.0f));
+}
+
+TEST(ExpressionParser, EulerConstantInExpression) {
+    EXPECT_EVAL("e+1", std::exp(1.0f) + 1.0f);
+}
+
+TEST(ExpressionParser, LogBaseX) {
+    EXPECT_EVAL("log(2,8)", 3.0f);
+}
+
+TEST(ExpressionParser, NaturalLog) {
+    EXPECT_EVAL("ln(e)", 1.0f);
+}
+
+TEST(ExpressionParser, AnsConstantUsesProvidedValue) {
+    ExprResult r = evaluate("Ans+2", 5.0f);
+    EXPECT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 7.0f, 1e-4f);
+}
+
+TEST(ExpressionParser, AnsImplicitMultiplyBefore) {
+    ExprResult r = evaluate("2Ans", 5.0f);
+    EXPECT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 10.0f, 1e-4f);
+}
+
+TEST(ExpressionParser, AnsDefaultsToZero) {
+    EXPECT_EVAL("Ans", 0.0f);
+}
+
+TEST(ExpressionParser, LogImplicitMultiplyBeforeFunction) {
+    EXPECT_EVAL("2log(2,8)", 6.0f);
+}
+
+TEST(ExpressionParser, LnImplicitMultiplyBeforeFunction) {
+    EXPECT_EVAL("2ln(e)", 2.0f);
+}
+
+TEST(ExpressionParser, LogDomainError) {
+    ExprResult r = evaluate("log(1,10)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Log domain error");
+}
+
+TEST(ExpressionParser, LogArgumentDomainError) {
+    ExprResult r = evaluate("log(2,0)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Log domain error");
+}
+
+TEST(ExpressionParser, LnDomainError) {
+    ExprResult r = evaluate("ln(-1)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Natural log domain error");
+}
+
 TEST(ExpressionParser, UnaryNegate) {
     EXPECT_EVAL("-5+3", -2.0f);
 }
@@ -78,6 +191,108 @@ TEST(ExpressionParser, NestedParentheses) {
 TEST(ExpressionParser, DivisionByZero) {
     ExprResult r = evaluate("1/0");
     EXPECT_TRUE(!r.ok || std::isinf(r.value));
+}
+
+TEST(ExpressionParserEdgeCases, MalformedDecimalDoubleDot) {
+    EXPECT_EVAL_ERROR("1..2");
+}
+
+TEST(ExpressionParserEdgeCases, MalformedDecimalSingleDot) {
+    EXPECT_EVAL_ERROR(".");
+}
+
+TEST(ExpressionParserEdgeCases, TrailingDotParsesAsWholeNumber) {
+    EXPECT_EVAL("2.", 2.0f);
+}
+
+TEST(ExpressionParserEdgeCases, ChainedOperatorsPlusMinus) {
+    EXPECT_EVAL("1+-2", -1.0f);
+}
+
+TEST(ExpressionParserEdgeCases, ChainedOperatorsDoubleMinus) {
+    EXPECT_EVAL("1--2", 3.0f);
+}
+
+TEST(ExpressionParserEdgeCases, DoubleUnaryMinus) {
+    EXPECT_EVAL("--2", 2.0f);
+}
+
+TEST(ExpressionParserEdgeCases, FunctionNamePrefixIsRejected) {
+    EXPECT_EVAL_ERROR("sine(1)");
+}
+
+TEST(ExpressionParserEdgeCases, BareFunctionNameIsRejected) {
+    EXPECT_EVAL_ERROR("sin");
+    EXPECT_EVAL_ERROR("ln");
+    EXPECT_EVAL_ERROR("log");
+}
+
+TEST(ExpressionParserEdgeCases, ImplicitMultiplicationScenarios) {
+    EXPECT_EVAL("2(3+4)", 14.0f);
+    EXPECT_EVAL("2sin(3)", 2.0f * std::sin(3.0f));
+    EXPECT_EVAL("(1+2)(3+4)", 21.0f);
+}
+
+TEST(ExpressionParserEdgeCases, LargePowerOverflows) {
+    ExprResult r = evaluate("999999^999");
+    EXPECT_TRUE(!r.ok || !std::isfinite(r.value));
+}
+
+TEST(ExpressionParserVariableX, VariableAloneUsesProvidedValue) {
+    ExprResult r = evaluateWithX("x", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 3.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInAddition) {
+    ExprResult r = evaluateWithX("x+2", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 5.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInExplicitMultiplication) {
+    ExprResult r = evaluateWithX("2*x", 4.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 8.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInImplicitMultiplication) {
+    ExprResult r = evaluateWithX("2x+1", 4.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 9.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableWithPower) {
+    ExprResult r = evaluateWithX("x^2", 5.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 25.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInGroupedExpression) {
+    ExprResult r = evaluateWithX("(x+1)*(x-1)", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 8.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, VariableInFunctionArgument) {
+    ExprResult r = evaluateWithX("sin(x)", 0.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 0.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, UppercaseXUsesProvidedValue) {
+    ExprResult r = evaluateWithX("X+2", 3.0f);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_NEAR(r.value, 5.0f, 1e-4f);
+}
+
+TEST(ExpressionParserVariableX, ExistingCalculatorEvaluationStillWorks) {
+    EXPECT_EVAL("2+3", 5.0f);
+}
+
+TEST(ExpressionParserVariableX, NormalEvaluationRejectsUndefinedX) {
+    ExprResult r = evaluate("x+1");
+    EXPECT_FALSE(r.ok);
 }
 
 // ── Pi constant tests ─────────────────────────────────────────────────────────
@@ -154,6 +369,20 @@ TEST(SquareRoot, NestedExpression) {
 
 TEST(SquareRoot, ImplicitMultiplyBeforeFunction) {
     EXPECT_EVAL("2sqrt(9)", 6.0f);
+}
+
+TEST(SquareRoot, NthRootBasic) {
+    EXPECT_EVAL("root(3,8)", 2.0f);
+}
+
+TEST(SquareRoot, NthRootNegativeOddIndex) {
+    EXPECT_EVAL("root(3,-8)", -2.0f);
+}
+
+TEST(SquareRoot, NthRootDomainErrorForEvenNegative) {
+    ExprResult r = evaluate("root(2,-4)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Root domain error");
 }
 
 TEST(SquareRoot, DomainErrorForNegativeInput) {
@@ -308,6 +537,10 @@ TEST(KeyEnum, PiNotCollidingWithActionKeys) {
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ACOT));
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ASEC));
     EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ACSC));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::LOG));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::LN));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ANS));
+    EXPECT_NE(static_cast<int>(Key::PI), static_cast<int>(Key::ROOT));
 }
 
 // PI must be considered printable
@@ -334,6 +567,10 @@ TEST(KeyEnum, ActionKeysNotPrintable) {
     EXPECT_FALSE(isPrintable(Key::ACOT));
     EXPECT_FALSE(isPrintable(Key::ASEC));
     EXPECT_FALSE(isPrintable(Key::ACSC));
+    EXPECT_FALSE(isPrintable(Key::LOG));
+    EXPECT_FALSE(isPrintable(Key::LN));
+    EXPECT_FALSE(isPrintable(Key::ANS));
+    EXPECT_FALSE(isPrintable(Key::ROOT));
     EXPECT_FALSE(isPrintable(Key::NONE));
 }
 
@@ -363,6 +600,10 @@ TEST(KeyEnum, OperatorKeysToChar) {
     EXPECT_EQ(toChar(Key::MULTIPLY),    '*');
     EXPECT_EQ(toChar(Key::DIVIDE),      '/');
     EXPECT_EQ(toChar(Key::POWER),       '^');
+    EXPECT_EQ(toChar(Key::PERCENT),     '%');
+    EXPECT_EQ(toChar(Key::FACTORIAL),   '!');
+    EXPECT_EQ(toChar(Key::E_CONST),     'e');
+    EXPECT_EQ(toChar(Key::COMMA),       ',');
     EXPECT_EQ(toChar(Key::OPEN_PAREN),  '(');
     EXPECT_EQ(toChar(Key::CLOSE_PAREN), ')');
     EXPECT_EQ(toChar(Key::DOT),         '.');

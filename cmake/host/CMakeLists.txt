@@ -7,6 +7,9 @@ add_library(host_platform STATIC
         ${HOST_PLATFORM_SOURCE_DIR}/display_sdl.h
         ${HOST_PLATFORM_SOURCE_DIR}/keypad_host.cpp
         ${HOST_PLATFORM_SOURCE_DIR}/keypad_host.h
+        ${HOST_PLATFORM_SOURCE_DIR}/simulator_keypad.cpp
+        ${HOST_PLATFORM_SOURCE_DIR}/simulator_keypad.h
+        ${HOST_PLATFORM_SOURCE_DIR}/simulator_layout.h
 )
 
 target_link_libraries(host_platform PUBLIC

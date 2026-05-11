@@ -15,7 +15,19 @@ if(PLATFORM STREQUAL "rp2350")
     endif()
 
     if(NOT PICO_SDK_PATH)
-        message(FATAL_ERROR "PICO_SDK_PATH is not set. Pass it with -DPICO_SDK_PATH=/home/miracleaigbogun/pico-sdk")
+        message(FATAL_ERROR
+            "PICO_SDK_PATH is not set.\n"
+            "Set it via environment or CMake flag, for example:\n"
+            "export PICO_SDK_PATH=$HOME/pico-sdk\n"
+            "cmake -S . -B build-rp2350 -DPLATFORM=rp2350 -DPICO_SDK_PATH=$HOME/pico-sdk\n"
+            "Fedora package note: install required toolchain packages first, then clone pico-sdk.")
+    endif()
+
+    if(NOT EXISTS "${PICO_SDK_PATH}/external/pico_sdk_import.cmake")
+        message(FATAL_ERROR
+            "PICO_SDK_PATH is set to '${PICO_SDK_PATH}', but pico_sdk_import.cmake was not found.\n"
+            "Expected: ${PICO_SDK_PATH}/external/pico_sdk_import.cmake\n"
+            "Ensure the Pico SDK path is correct and initialized.")
     endif()
 
     message(STATUS "Using Pico SDK at: ${PICO_SDK_PATH}")
@@ -26,6 +38,7 @@ project(mi23)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+option(BUILD_TESTING "Build unit tests" ON)
 
 if(PLATFORM STREQUAL "rp2350")
     pico_sdk_init()
@@ -33,6 +46,6 @@ endif()
 
 add_subdirectory(firmware)
 
-if(PLATFORM STREQUAL "host")
+if(PLATFORM STREQUAL "host" AND BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(tests)
 endif()

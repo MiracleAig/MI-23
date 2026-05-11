@@ -7,11 +7,12 @@
 ## Features
 
 - Arithmetic expression evaluation with correct operator precedence
-- Exponent and negative number support
-- Scrolling calculation history
-- Blinking text cursor
 - Dual-platform codebase — runs as a desktop simulator (SDL2) and on real hardware (RP2350)
-
+- Modular HAL (Hardware Abstraction Layer) architecture for easy platform extension
+- Unit tested expression parser using Google Test framework
+- Support for decimal numbers and parentheses in expressions
+- Real-time expression rendering and error handling
+- Static and dynamic SDL2 linking options for release and debug builds
 ## Hardware
 
 | Part | Details |
@@ -25,7 +26,7 @@
 
 ## Running the Simulator
 
-The simulator lets you run MI-23 on your computer without any hardware. It uses SDL2 to emulate the display and accepts keyboard input.
+The simulator lets you run MI-23 on your computer without any hardware. It uses SDL2 to emulate the display and accepts keyboard and mouse input.
 
 ### Prerequisites
 
@@ -57,27 +58,26 @@ pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2 ming
 git clone https://github.com/MiracleAig/MI-23
 cd MI-23
 
-cmake -B build-host -DPLATFORM=host
-cmake --build build-host
+./build.sh --clean --platform=host
 
-./build-host/mi23
+./build-host/firmware/platform/host/sdl_simulator/mi23
 ```
 
-### Controls
+### Cross-compile for Windows from Linux
 
-| Key | Action |
-|-----|--------|
-| `0–9` | Enter digits |
-| `+ - * /` | Operators |
-| `^` | Exponent |
-| `( )` | Parentheses |
-| `.` | Decimal point |
-| `Enter` | Evaluate expression |
-| `Backspace` | Delete last character |
-| `Escape` | Clear input |
-| `↑ / ↓` or scroll | Scroll history |
+Install the MinGW-w64 cross toolchain and Windows SDL2 development package for your Linux distribution, then run:
 
----
+```bash
+./build.sh --clean --platform=windows
+```
+
+This produces:
+
+```text
+build-win/firmware/platform/host/sdl_simulator/mi23.exe
+```
+
+The build script also copies the required MinGW/SDL runtime DLLs next to the executable, including `SDL3.dll` when the installed SDL2 package uses SDL2 compatibility on top of SDL3.
 
 ## Building for Hardware
 
@@ -93,11 +93,10 @@ cd ~/pico-sdk && git submodule update --init
 ### Build
 
 ```bash
-cmake -B build-rp2350 -DPLATFORM=rp2350 -DPICO_SDK_PATH=/path/to/pico-sdk
-cmake --build build-rp2350
+./build.sh --clean --platform=rp2350
 ```
 
-This produces `build-rp2350/mi23.uf2`.
+This produces `/build-rp2350/firmware/platform/rp2350/mi23.uf2`.
 
 ### Flash
 
@@ -112,23 +111,27 @@ This produces `build-rp2350/mi23.uf2`.
 
 ```
 firmware/
-├── core/        # Expression parser and evaluator (Shunting-Yard)
-├── hal/
-│   ├── host/    # SDL2 simulator (display + keypad)
-│   └── rp2350/  # Hardware drivers (ST7789, GPIO keypad matrix)
-├── graphics/    # Font renderer
-├── ui/          # Calculator app, history
-└── tests/       # Unit tests for the expression engine
+├── app/                     # High-level applications
+│   ├── calculator/          # Standard calculator mode
+│   └── graphing/            # Graphing engine (in progress)
+├── drivers/                 # Low-level hardware drivers
+│   └── st7789/              # ST7789 display driver
+├── graphics/                # Rendering utilities and primitives
+├── hal/                     # Hardware Abstraction Layer interfaces
+├── math/                    # Expression parser and evaluation engine
+└── platform/                # Platform-specific implementations
+├── host/
+│   └── sdl_simulator/   # Desktop simulator backend
+└── rp2350/
+└── config/          # RP2350 build/config definitions
 ```
-
 ---
 
 ## Running Tests
 
+From base project directory:
 ```bash
-cmake -B build-host -DPLATFORM=host
-cmake --build build-host
-cd build-host && ctest --output-on-failure
+./mi23 --test
 ```
 
 ---

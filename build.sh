@@ -1,12 +1,9 @@
 #!/bin/bash
-
-# MI-23 Build Script
-# Run this from the ~/calculator/ directory
-
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+show_banner() {
 cat << 'EOF'
 
  /$$      /$$ /$$$$$$       /$$$$$$   /$$$$$$
@@ -19,67 +16,112 @@ cat << 'EOF'
 |__/     |__/|______/     |________/ \______/
 
              MI-23 BUILD SYSTEM
-             
-EOF
 
-# Parse arguments
+EOF
+}
+
+show_help() {
+    echo "Usage: ./build.sh [options]"
+    echo ""
+    echo "Run ./build.sh with no options for interactive mode."
+    echo ""
+    echo "Options:"
+    echo "  --clean"
+    echo "  --platform=host"
+    echo "  --platform=windows"
+    echo "  --platform=rp2350"
+    echo "  --test"
+    echo "  --run"
+    echo "  --release"
+    echo "  --help"
+}
+
 CLEAN=false
 PLATFORM="host"
 RUN_TESTS=false
 RUN_AFTER=false
 RELEASE=false
+WINDOWS=false
 
-for arg in "$@"; do
-    case $arg in
-        --clean)
-            CLEAN=true
-            ;;
-        --platform=*)
-            PLATFORM="${arg#*=}"
-            ;;
-        --test)
-            RUN_TESTS=true
-            PLATFORM="host"
-            ;;
-        --run)
-            RUN_AFTER=true
-            ;;
-        --release)
-            RELEASE=true
-            PLATFORM="host"
-            ;;
-        --help)
-            echo "Usage: ./build.sh [options]"
-            echo ""
-            echo "Options:"
-            echo "  --clean            Wipe build folder before building"
-            echo "  --platform=host    Build for PC simulator (default)"
-            echo "  --platform=rp2350  Build for real hardware"
-            echo "  --test             Build and run unit tests (forces host platform)"
-            echo "  --run              Launch the simulator after building"
-            echo "  --release          Build a release binary (static, stripped, no debug)"
-            echo "  --help             Show this message"
-            exit 0
-            ;;
+interactive_menu() {
+    echo "What do you want to build?"
+    echo "  1) Host simulator"
+    echo "  2) Host simulator and run"
+    echo "  3) Run unit tests"
+    echo "  4) RP2350 firmware"
+    echo "  5) Windows simulator"
+    echo "  6) Linux release build"
+    echo ""
+    read -rp "Choose an option [1-6]: " choice
+
+    case "$choice" in
+        1) PLATFORM="host" ;;
+        2) PLATFORM="host"; RUN_AFTER=true ;;
+        3) PLATFORM="host"; RUN_TESTS=true ;;
+        4) PLATFORM="rp2350" ;;
+        5) PLATFORM="windows"; WINDOWS=true ;;
+        6) PLATFORM="host"; RELEASE=true ;;
+        *) echo "Invalid option"; exit 1 ;;
     esac
-done
 
-# Release builds always go into their own directory so they never
-# overwrite a debug build you might want to keep for development
-if [ "$RELEASE" = true ]; then
+    read -rp "Clean build folder first? [y/N]: " clean_choice
+    case "$clean_choice" in
+        y|Y|yes|YES) CLEAN=true ;;
+    esac
+}
+
+show_banner
+
+if [ "$#" -eq 0 ]; then
+    interactive_menu
+else
+    for arg in "$@"; do
+        case "$arg" in
+            --clean) CLEAN=true ;;
+            --platform=*) PLATFORM="${arg#*=}" ;;
+            --test) RUN_TESTS=true; PLATFORM="host" ;;
+            --run) RUN_AFTER=true ;;
+            --release) RELEASE=true ;;
+            --help) show_help; exit 0 ;;
+            *) echo "Unknown option: $arg"; show_help; exit 1 ;;
+        esac
+    done
+fi
+
+if [ "$PLATFORM" = "win" ]; then
+    PLATFORM="windows"
+fi
+
+if [ "$PLATFORM" = "windows" ]; then
+    WINDOWS=true
+fi
+
+if [ "$RUN_TESTS" = true ] && [ "$WINDOWS" = true ]; then
+    echo "Error: tests only work for native host builds."
+    exit 1
+fi
+
+if [ "$RELEASE" = true ] && [ "$PLATFORM" = "rp2350" ]; then
+    echo "Error: release mode is only for simulator builds."
+    exit 1
+fi
+
+if [ "$WINDOWS" = true ]; then
+    BUILD_DIR="$PROJECT_DIR/build-win"
+elif [ "$RELEASE" = true ]; then
     BUILD_DIR="$PROJECT_DIR/build-release"
 else
     BUILD_DIR="$PROJECT_DIR/build-$PLATFORM"
 fi
 
 HOST_BINARY="$BUILD_DIR/firmware/platform/host/sdl_simulator/mi23"
+WINDOWS_BINARY="$BUILD_DIR/firmware/platform/host/sdl_simulator/mi23.exe"
 HOST_TEST_DIR="$BUILD_DIR/tests"
 RP2350_OUTPUT_DIR="$BUILD_DIR/firmware/platform/rp2350"
 RP2350_UF2="$RP2350_OUTPUT_DIR/mi23.uf2"
 RP2350_ELF="$RP2350_OUTPUT_DIR/mi23.elf"
 RP2350_BIN="$RP2350_OUTPUT_DIR/mi23.bin"
 
-# Clean if requested
 if [ "$CLEAN" = true ]; then
     echo "Cleaning $BUILD_DIR..."
     rm -rf "$BUILD_DIR"
@@ -87,96 +129,86 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
-# ── Configure ────────────────────────────────────────────────────────────────
-if [ ! -f "$BUILD_DIR/Makefile" ]; then
+if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
     echo "Configuring CMake for platform: $PLATFORM"
 
-    if [ "$RELEASE" = true ]; then
-        # Release mode:
-        #   CMAKE_BUILD_TYPE=Release   → enables -O2 optimisation, disables asserts
-        #   BUILD_RELEASE=ON           → our custom flag that switches SDL2 to static
+    if [ "$WINDOWS" = true ]; then
+        cmake -S "$PROJECT_DIR" \
+              -B "$BUILD_DIR" \
+              -DPLATFORM=host \
+              -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchains/mingw64.cmake" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=OFF
+
+    elif [ "$RELEASE" = true ]; then
         cmake -S "$PROJECT_DIR" \
               -B "$BUILD_DIR" \
               -DPLATFORM=host \
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_RELEASE=ON
+
     else
-        cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DPLATFORM="$PLATFORM"
+        cmake -S "$PROJECT_DIR" \
+              -B "$BUILD_DIR" \
+              -DPLATFORM="$PLATFORM"
     fi
 fi
 
-# ── Build ────────────────────────────────────────────────────────────────────
 echo "Building MI-23 ($PLATFORM)..."
-cmake --build "$BUILD_DIR" -- -j$(nproc)
+cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 
-# ── Release post-processing ──────────────────────────────────────────────────
+if [ "$WINDOWS" = true ]; then
+    if [ ! -f "$WINDOWS_BINARY" ]; then
+        echo "Error: Windows binary not found at $WINDOWS_BINARY"
+        exit 1
+    fi
+
+    if command -v x86_64-w64-mingw32-strip &> /dev/null; then
+        x86_64-w64-mingw32-strip "$WINDOWS_BINARY"
+    fi
+
+    echo ""
+    echo "Windows build successful:"
+    echo "  $WINDOWS_BINARY"
+    exit 0
+fi
+
 if [ "$RELEASE" = true ]; then
-    BINARY="$HOST_BINARY"
-
-    # Check that strip is available — it ships with binutils which is
-    # always present on Fedora, but worth a clear error if somehow missing
-    if ! command -v strip &> /dev/null; then
-        echo "Error: 'strip' not found. Install binutils: sudo dnf install binutils"
+    if [ ! -f "$HOST_BINARY" ]; then
+        echo "Error: release binary not found at $HOST_BINARY"
         exit 1
     fi
 
-    if [ ! -f "$BINARY" ]; then
-        echo "Error: release binary not found at $BINARY"
-        exit 1
-    fi
+    strip "$HOST_BINARY"
+    cp "$HOST_BINARY" "$PROJECT_DIR/mi23-linux-x86_64"
 
     echo ""
-    echo "Stripping debug symbols..."
-    BEFORE=$(du -sh "$BINARY" | cut -f1)
-    strip "$BINARY"
-    AFTER=$(du -sh "$BINARY" | cut -f1)
-    echo "  Size before strip: $BEFORE"
-    echo "  Size after strip:  $AFTER"
-
-    # Copy the finished binary to the project root so it's easy to find
-    # and attach to a GitHub release
-    cp "$BINARY" "$PROJECT_DIR/mi23-linux-x86_64"fi#!/bin/bash
-
-    echo ""
-    echo "================================"
-    echo "  Release binary ready!"
-    echo "  $(pwd)/mi23-linux-x86_64"
-    echo "================================"
-    echo ""
-    echo "Users can run it with:"
-    echo "  chmod +x mi23-linux-x86_64"
-    echo "  ./mi23-linux-x86_64"
+    echo "Release binary ready:"
+    echo "  $PROJECT_DIR/mi23-linux-x86_64"
     exit 0
 fi
 
 echo ""
-echo "================================"
-echo "  Build successful!"
-echo "================================"
+echo "Build successful."
 
 if [ "$PLATFORM" = "rp2350" ]; then
     echo ""
-    echo "RP2350 outputs:"
+    echo "RP2350 firmware outputs:"
     echo "  UF2: $RP2350_UF2"
     echo "  ELF: $RP2350_ELF"
     echo "  BIN: $RP2350_BIN"
 fi
 
-# Run tests if --test was passed
 if [ "$RUN_TESTS" = true ]; then
     echo ""
     echo "Running unit tests..."
-    echo "--------------------------------"
     ctest --test-dir "$HOST_TEST_DIR" --output-on-failure
 fi
 
-# Launch simulator if --run was passed
 if [ "$RUN_AFTER" = true ]; then
     if [ "$PLATFORM" != "host" ]; then
-        echo "Warning: --run only works with host platform, skipping"
+        echo "Warning: --run only works with host builds."
     else
-        echo ""
-        echo "Launching simulator..."
         "$HOST_BINARY"
     fi
 fi

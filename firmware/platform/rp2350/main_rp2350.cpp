@@ -4,299 +4,221 @@
 
 #include "pico/stdlib.h"
 #include "display_rp2350.h"
+#include "app/home/calculator_home.h"
+#include "app/calculator/calculator_app.h"
+#include "app/graphing/graph_app.h"
 #include "platform/rp2350/keypad_rp2350.h"
 #include "keypad_rp2350_2.h"
-#include "math/expression.h"
 #include <cstdio>
-#include <cstring>
 
-// ── Display layout constants ─────────────────────────────────────────────────
-static constexpr int SCREEN_W        = 320;
-static constexpr int SCREEN_H        = 240;
-static constexpr int SCALE           = 2;
-static constexpr int CHAR_W          = 6 * SCALE;
-static constexpr int CHAR_H          = 8 * SCALE;
-static constexpr int MARGIN          = 4;
-static constexpr int ENTRY_H         = CHAR_H * 2 + 4;
-static constexpr int STATUS_H        = 8 + MARGIN;
-static constexpr int STATUS_Y        = SCREEN_H - STATUS_H;
-static constexpr int HISTORY_AREA_H  = STATUS_Y - MARGIN;
-static constexpr int MAX_VISIBLE     = (HISTORY_AREA_H - ENTRY_H) / ENTRY_H;
-static constexpr int MAX_CHARS       = (SCREEN_W - MARGIN * 2) / CHAR_W;
+namespace {
 
-static const uint16_t COLOR_SEPARATOR = Display::rgb(70, 70, 90);
-static constexpr char SQRT_INSERT_TEXT[] = "sqrt()";
-static constexpr char PAREN_PAIR_TEXT[]  = "()";
+static constexpr int SCREEN_W = 320;
+static constexpr int SCREEN_H = 240;
+static constexpr int HEADER_HEIGHT = 22;
+static constexpr int CONTENT_Y = HEADER_HEIGHT;
+static constexpr int CONTENT_H = SCREEN_H - HEADER_HEIGHT;
 
-// ── History storage ──────────────────────────────────────────────────────────
-static constexpr int MAX_HISTORY = 20;
+const uint16_t COLOR_HEADER_BG = Display::rgb(22, 35, 48);
+const uint16_t COLOR_HEADER_TEXT = Display::WHITE;
+const uint16_t COLOR_HEADER_MUTED = Display::rgb(150, 160, 172);
+const uint16_t COLOR_HOME_BG = Display::rgb(8, 10, 14);
 
-struct HistoryEntry {
-    char input[MAX_CHARS + 1];
-    char result[32];
-    bool isError;
+CalculatorAppConfig rpCalculatorConfig() {
+    CalculatorAppConfig config;
+    config.showOnScreenKeypad = false;
+    config.uiScale = 2;
+    return config;
+}
+
+class DualKeypad : public Keypad {
+public:
+    DualKeypad(Keypad& primary, Keypad& secondary)
+        : m_primary(primary), m_secondary(secondary) {}
+
+    void init() override {
+        m_primary.init();
+        m_secondary.init();
+    }
+
+    Key getKey() override {
+        const Key first = m_primary.getKey();
+        if (first != Key::NONE) {
+            return first;
+        }
+        return m_secondary.getKey();
+    }
+
+private:
+    Keypad& m_primary;
+    Keypad& m_secondary;
 };
 
-static HistoryEntry s_history[MAX_HISTORY];
-static int s_historyCount = 0;
-
-// ── Live input buffer ────────────────────────────────────────────────────────
-static char s_buf[MAX_CHARS + 1] = {};
-static int  s_len                = 0;
-static int  s_cursor             = 0;  
-
-// ── Ring buffer helpers ──────────────────────────────────────────────────────
-static const HistoryEntry* getEntry(int index) {
-    int total = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
-    if (index < 0 || index >= total) return nullptr;
-    int oldest = s_historyCount >= MAX_HISTORY
-                     ? (s_historyCount % MAX_HISTORY) : 0;
-    int slot = (oldest + index) % MAX_HISTORY;
-    return &s_history[slot];
-}
-
-static void pushHistory(const char* input, const char* result, bool isError) {
-    int slot = s_historyCount % MAX_HISTORY;
-    strncpy(s_history[slot].input,  input,  MAX_CHARS);
-    strncpy(s_history[slot].result, result, 31);
-    s_history[slot].input[MAX_CHARS] = '\0';
-    s_history[slot].result[31]       = '\0';
-    s_history[slot].isError          = isError;
-    s_historyCount++;
-}
-
-// ── Layout helper ────────────────────────────────────────────────────────────
-static int getInputY() {
-    int total        = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
-    int firstVisible = total - MAX_VISIBLE;
-    if (firstVisible < 0) firstVisible = 0;
-    return MARGIN + (total - firstVisible) * ENTRY_H;
-}
-
-static bool insertTextAtCursor(const char* text) {
-    const int insertLen = static_cast<int>(strlen(text));
-    if (s_len + insertLen > MAX_CHARS) {
-        return false;
+const char* appTitle(AppId app) {
+    switch (app) {
+        case AppId::Home: return "Home";
+        case AppId::Calculator: return "Calculator";
+        case AppId::Graphing: return "Graphing";
+        default: return "";
     }
-
-    memmove(&s_buf[s_cursor + insertLen],
-            &s_buf[s_cursor],
-            s_len - s_cursor + 1);
-    memcpy(&s_buf[s_cursor], text, insertLen);
-    s_len += insertLen;
-    s_cursor += insertLen;
-    return true;
 }
 
-static bool skipExistingCloseParen() {
-    if (s_cursor < s_len && s_buf[s_cursor] == ')') {
-        s_cursor++;
-        return true;
-    }
-    return false;
+int getBatteryLevel() {
+    return 100;
 }
 
-// ── Drawing helpers ──────────────────────────────────────────────────────────
-static void drawSeparator(DisplayRP2350& display, int y) {
-    display.drawRect(MARGIN, y, SCREEN_W - MARGIN * 2, 1, COLOR_SEPARATOR);
+void drawBatteryIndicator(DisplayRP2350& display) {
+    const int level = getBatteryLevel();
+    char label[8] = {};
+    snprintf(label, sizeof(label), "%d%%", level);
+
+    const int labelX = SCREEN_W - Display::textWidth(label) - 6;
+    const int iconW = 24;
+    const int iconH = 10;
+    const int iconX = labelX - iconW - 5;
+    const int iconY = (HEADER_HEIGHT - iconH) / 2;
+    const int fillW = (iconW - 4) * level / 100;
+
+    display.fillRect(iconX, iconY, iconW, 1, COLOR_HEADER_TEXT);
+    display.fillRect(iconX, iconY + iconH - 1, iconW, 1, COLOR_HEADER_TEXT);
+    display.fillRect(iconX, iconY, 1, iconH, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + iconW - 1, iconY, 1, iconH, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + iconW, iconY + 3, 2, 4, COLOR_HEADER_TEXT);
+    display.fillRect(iconX + 2, iconY + 2, fillW, iconH - 4, Display::GREEN);
+    display.drawText(label, labelX, 7, COLOR_HEADER_TEXT);
 }
 
-static void drawStatusBar(DisplayRP2350& display) {
-    display.drawRect(0, STATUS_Y, SCREEN_W, STATUS_H, Display::BLACK);
-    display.drawText("ENT=eval CLR=del ESC=clr",
-                     MARGIN, STATUS_Y, Display::GREEN, 1);
+void drawGlobalHeader(DisplayRP2350& display, AppId app) {
+    display.fillRect(0, 0, SCREEN_W, HEADER_HEIGHT, COLOR_HEADER_BG);
+    display.drawText(appTitle(app), 8, 7, COLOR_HEADER_TEXT);
+    display.drawText("DEG", SCREEN_W / 2 - Display::textWidth("DEG") / 2, 7,
+                     COLOR_HEADER_MUTED);
+    drawBatteryIndicator(display);
 }
 
-static void redrawInputLine(DisplayRP2350& display) {
-    int inputY = getInputY();
-    display.drawRect(0, inputY, SCREEN_W, ENTRY_H, Display::BLACK);
-    display.drawText(s_buf, MARGIN, inputY, Display::WHITE, SCALE);
+void renderHome(DisplayRP2350& display, HomeScreen& home) {
+    display.clear(Display::BLACK);
+    drawGlobalHeader(display, AppId::Home);
+    display.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
+    home.renderContent(CONTENT_Y, CONTENT_H);
+}
+
+void renderGraphingApp(DisplayRP2350& display, GraphApp& graphApp) {
+    display.clear(Display::BLACK);
+    drawGlobalHeader(display, AppId::Graphing);
+    display.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_HOME_BG);
+    graphApp.renderContent(display, 0, CONTENT_Y, SCREEN_W, CONTENT_H);
     display.present();
 }
 
-static void redrawFull(DisplayRP2350& display) {
-    int total        = s_historyCount < MAX_HISTORY ? s_historyCount : MAX_HISTORY;
-    int firstVisible = total - MAX_VISIBLE;
-    if (firstVisible < 0) firstVisible = 0;
-    int visibleCount = total - firstVisible;
+class RP2350AppController {
+public:
+    RP2350AppController(DisplayRP2350& display,
+                        Keypad& keypad,
+                        HomeScreen& home,
+                        CalculatorApp& calculator)
+        : m_display(display)
+        , m_keypad(keypad)
+        , m_home(home)
+        , m_calculator(calculator)
+        , m_activeApp(AppId::Home)
+        , m_waitingForRelease(false) {}
 
-    int historyAreaBottom = MARGIN + visibleCount * ENTRY_H;
-    display.drawRect(0, MARGIN, SCREEN_W, historyAreaBottom, Display::BLACK);
-
-    for (int i = firstVisible; i < total; i++) {
-        const HistoryEntry* e = getEntry(i);
-        if (!e) continue;
-
-        int row = i - firstVisible;
-        int y   = MARGIN + row * ENTRY_H;
-
-        if (row > 0) drawSeparator(display, y - 2);
-
-        display.drawText(e->input, MARGIN, y, Display::WHITE, SCALE);
-
-        int resultW = static_cast<int>(strlen(e->result)) * CHAR_W;
-        int resultX = SCREEN_W - resultW - MARGIN;
-        if (resultX < MARGIN) resultX = MARGIN;
-        display.drawText(e->result, resultX, y + CHAR_H + 2,
-                         e->isError ? Display::RED : Display::GREEN, SCALE);
+    void init() {
+        m_display.init();
+        m_keypad.init();
+        m_home.enter();
+        renderHome(m_display, m_home);
     }
 
-    int inputY = MARGIN + visibleCount * ENTRY_H;
-    if (visibleCount > 0) drawSeparator(display, inputY - 2);
+    void tick() {
+        const Key raw = m_keypad.getKey();
+        Key pressed = Key::NONE;
+        if (raw == Key::NONE) {
+            m_waitingForRelease = false;
+        } else if (!m_waitingForRelease) {
+            pressed = raw;
+            m_waitingForRelease = true;
+        }
 
-    display.drawRect(0, inputY, SCREEN_W, ENTRY_H, Display::BLACK);
-    display.drawText(s_buf, MARGIN, inputY, Display::WHITE, SCALE);
+        if (pressed == Key::HOME) {
+            goHome();
+            return;
+        }
 
-    drawStatusBar(display);
-    display.present();
-}
+        if (m_activeApp == AppId::Home) {
+            const AppId launchTarget = m_home.handleKey(pressed);
+            if (launchTarget != AppId::Home) {
+                launch(launchTarget);
+            } else if (pressed != Key::NONE) {
+                renderHome(m_display, m_home);
+            }
+            return;
+        }
 
-// ── Cursor ───────────────────────────────────────────────────────────────────
-// Now uses s_cursor instead of s_len so it sits at the cursor position
-static void drawCursor(DisplayRP2350& display, bool visible) {
-    int inputY  = getInputY();
-    int cursorX = MARGIN + s_cursor * CHAR_W;   // ← was s_len
-    if (cursorX >= SCREEN_W - MARGIN) return;
+        if (m_activeApp == AppId::Calculator) {
+            m_calculator.handleKey(pressed);
+            m_calculator.render();
+            return;
+        }
 
-    uint16_t color = visible ? Display::WHITE : Display::BLACK;
-    display.drawRect(cursorX, inputY, 2 * SCALE, CHAR_H, color);
-    display.present();
-}
+        if (m_activeApp == AppId::Graphing) {
+            m_graph.handleKey(pressed);
+            if (m_graph.needsRender()) {
+                renderGraphingApp(m_display, m_graph);
+            }
+            return;
+        }
+    }
 
-// ── Entry point ──────────────────────────────────────────────────────────────
+private:
+    DisplayRP2350& m_display;
+    Keypad& m_keypad;
+    HomeScreen& m_home;
+    CalculatorApp& m_calculator;
+    GraphApp m_graph;
+    AppId m_activeApp;
+    bool m_waitingForRelease;
+
+    void goHome() {
+        if (m_activeApp != AppId::Home) {
+            m_home.enter();
+            m_activeApp = AppId::Home;
+            renderHome(m_display, m_home);
+        }
+    }
+
+    void launch(AppId app) {
+        if (app == AppId::Calculator) {
+            m_activeApp = AppId::Calculator;
+            m_calculator.requestRender();
+            m_calculator.render();
+        } else if (app == AppId::Graphing) {
+            m_activeApp = AppId::Graphing;
+            m_graph.enter();
+            renderGraphingApp(m_display, m_graph);
+        }
+    }
+};
+
+} // namespace
+
 int main() {
     stdio_init_all();
 
-    DisplayRP2350  display;
-    display.init();
+    DisplayRP2350 display;
+    KeypadRP2350 keypad1;
+    KeypadRP2350_2 keypad2;
+    DualKeypad keypad(keypad1, keypad2);
 
-    KeypadRP2350   keypad1;
-    KeypadRP2350_2 keypad2;   
-    keypad1.init();
-    keypad2.init();            
+    HomeScreen home(display);
+    CalculatorApp calculator(display, keypad, rpCalculatorConfig());
 
-    redrawFull(display);
-
-    bool     cursorVisible = true;
-    uint32_t lastBlink     = to_ms_since_boot(get_absolute_time());
-    drawCursor(display, cursorVisible);
+    RP2350AppController app(display, keypad, home, calculator);
+    app.init();
 
     while (true) {
-        // Poll both keypads — keypad2 only checked if keypad1 returns nothing
-        Key k = keypad1.getKey();
-        if (k == Key::NONE) k = keypad2.getKey();   
-
-        if (k != Key::NONE) {
-            drawCursor(display, false);
-
-            if (k == Key::CURSOR_LEFT) {             
-                if (s_cursor > 0) {
-                    s_cursor--;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::CURSOR_RIGHT) {       
-                if (s_cursor < s_len) {
-                    s_cursor++;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::CLEAR) {
-                // Backspace at cursor position — remove character to the left
-                if (s_cursor > 0) {
-                    memmove(&s_buf[s_cursor - 1],
-                            &s_buf[s_cursor],
-                            s_len - s_cursor + 1);
-                    s_len--;
-                    s_cursor--;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::ESCAPE) {
-                if (s_len > 0) {
-                    s_len    = 0;
-                    s_cursor = 0;                    
-                    s_buf[0] = '\0';
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::ENTER) {
-                if (s_len > 0) {
-                    ExprResult result = evaluate(s_buf);
-
-                    char numBuf[32] = {};
-                    if (result.ok) {
-                        snprintf(numBuf, sizeof(numBuf), "%.6g", result.value);
-                    } else {
-                        strncpy(numBuf, result.error, 31);
-                        numBuf[31] = '\0';
-                    }
-
-                    pushHistory(s_buf, numBuf, !result.ok);
-
-                    s_len    = 0;
-                    s_cursor = 0;                    
-                    s_buf[0] = '\0';
-
-                    redrawFull(display);
-                }
-            }
-
-            else if (k == Key::SQRT) {
-                if (insertTextAtCursor(SQRT_INSERT_TEXT)) {
-                    s_cursor--;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::OPEN_PAREN) {
-                if (insertTextAtCursor(PAREN_PAIR_TEXT)) {
-                    s_cursor--;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (k == Key::CLOSE_PAREN) {
-                if (skipExistingCloseParen()) {
-                    redrawInputLine(display);
-                } else if (s_len < MAX_CHARS) {
-                    memmove(&s_buf[s_cursor + 1],
-                            &s_buf[s_cursor],
-                            s_len - s_cursor + 1);
-                    s_buf[s_cursor] = toChar(k);
-                    s_len++;
-                    s_cursor++;
-                    redrawInputLine(display);
-                }
-            }
-
-            else if (isPrintable(k) && s_len < MAX_CHARS) {
-                // Insert at cursor position instead of appending   
-                memmove(&s_buf[s_cursor + 1],
-                        &s_buf[s_cursor],
-                        s_len - s_cursor + 1);
-                s_buf[s_cursor] = toChar(k);
-                s_len++;
-                s_cursor++;
-                redrawInputLine(display);
-            }
-
-            cursorVisible = true;
-            lastBlink     = to_ms_since_boot(get_absolute_time());
-            drawCursor(display, cursorVisible);
-        }
-
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - lastBlink >= 500) {
-            lastBlink     = now;
-            cursorVisible = !cursorVisible;
-            drawCursor(display, cursorVisible);
-        }
-
+        app.tick();
         sleep_ms(16);
     }
 }

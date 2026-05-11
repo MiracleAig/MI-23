@@ -7,6 +7,16 @@ target_link_libraries(mi23 PRIVATE
         host_platform
 )
 
+if(WIN32 AND TARGET SDL2::SDL2main)
+    target_link_libraries(mi23 PRIVATE
+            SDL2::SDL2main
+    )
+    target_link_options(mi23 PRIVATE
+            -static-libgcc
+            -static-libstdc++
+    )
+endif()
+
 if(BUILD_RELEASE)
     target_link_libraries(mi23 PRIVATE
             SDL2::SDL2-static
