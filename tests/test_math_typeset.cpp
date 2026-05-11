@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstring>
 
 #include "../firmware/hal/display.h"
 #include "../firmware/math/math_typeset.h"
@@ -173,6 +174,60 @@ TEST(MathTypeset, CursorTracksExponentBaseline) {
     EXPECT_LT(exponent.baselineOffset, 0);
 }
 
+TEST(MathTypeset, CursorHeightStaysBoundedForLeadingPlusNumber) {
+    math_typeset::CursorMetrics cursor{};
+
+    ASSERT_TRUE(math_typeset::cursorMetrics("+1", 1, 1.0f, cursor));
+    EXPECT_LE(cursor.ascent + cursor.descent, 10);
+}
+
+TEST(MathTypeset, CursorHeightStaysBoundedForLeadingMinusNumber) {
+    math_typeset::CursorMetrics cursor{};
+
+    ASSERT_TRUE(math_typeset::cursorMetrics("-1", 1, 1.0f, cursor));
+    EXPECT_LE(cursor.ascent + cursor.descent, 10);
+}
+
+TEST(MathTypeset, CursorHeightStaysBoundedInsideContainers) {
+    const char* expressions[] = {
+        "1/2",
+        "2^3",
+        "(4)",
+        "sin(5)",
+        "sqrt(6)",
+    };
+
+    for (const char* expression : expressions) {
+        const int length = static_cast<int>(strlen(expression));
+        for (int cursor = 0; cursor <= length; cursor++) {
+            math_typeset::CursorMetrics metrics{};
+            ASSERT_TRUE(math_typeset::cursorMetrics(expression, cursor, 1.0f, metrics))
+                << expression << " cursor " << cursor;
+            EXPECT_LE(metrics.ascent + metrics.descent, 10)
+                << expression << " cursor " << cursor;
+        }
+    }
+}
+
+TEST(MathTypeset, TrigFunctionArgumentsKeepFullExpressionBody) {
+    const char sinPiPlusOne[] = {
+        's', 'i', 'n', '(', static_cast<char>(128), '+', '1', ')', '\0'
+    };
+    const char* expressions[] = {
+        sinPiPlusOne,
+        "sin(1+2)",
+        "cos(3*4)",
+        "tan(5-2)",
+        "sin((1+2)*3)",
+    };
+
+    for (const char* expression : expressions) {
+        math_typeset::LayoutMetrics metrics{};
+        EXPECT_TRUE(math_typeset::measure(expression, metrics)) << expression;
+        EXPECT_GT(metrics.width, 0) << expression;
+    }
+}
+
 TEST(MathTypesetCursor, UpMovesFromDenominatorToNumerator) {
     const char* expression = "12/345";
     const int start = 4; // inside denominator
@@ -228,6 +283,66 @@ TEST(MathTypesetCursor, HorizontalMovesInsideFractionRegionBeforeExiting) {
                                        2,
                                        math_typeset::CursorMove::Right),
               6);
+}
+
+TEST(MathTypesetCursor, HorizontalExitsExponent) {
+    const char* expression = "2^3";
+
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       2,
+                                       math_typeset::CursorMove::Left),
+              1);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       3,
+                                       math_typeset::CursorMove::Right),
+              3);
+}
+
+TEST(MathTypesetCursor, HorizontalExitsParentheses) {
+    const char* expression = "(12)";
+
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       1,
+                                       math_typeset::CursorMove::Left),
+              0);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       3,
+                                       math_typeset::CursorMove::Right),
+              4);
+}
+
+TEST(MathTypesetCursor, HorizontalExitsTrigFunctionArgument) {
+    const char* expression = "sin(12)";
+
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       3,
+                                       math_typeset::CursorMove::Right),
+              4);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       4,
+                                       math_typeset::CursorMove::Left),
+              0);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       6,
+                                       math_typeset::CursorMove::Right),
+              7);
+}
+
+TEST(MathTypesetCursor, HorizontalExitsSquareRootArgument) {
+    const char* expression = "sqrt(9)";
+
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       4,
+                                       math_typeset::CursorMove::Right),
+              5);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       5,
+                                       math_typeset::CursorMove::Left),
+              0);
+    EXPECT_EQ(math_typeset::moveCursor(expression,
+                                       6,
+                                       math_typeset::CursorMove::Right),
+              7);
 }
 
 TEST(MathTypeset, ParenthesesGrowWithTallContent) {

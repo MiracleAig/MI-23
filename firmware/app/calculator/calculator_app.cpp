@@ -315,6 +315,9 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
     , m_inputLen(0)
     , m_cursorPos(0)
     , m_inputViewportX(0)
+    , m_inputLayoutDirty(true)
+    , m_cachedInputMeasured(false)
+    , m_cachedInputMetrics{0, FONT_CHAR_HEIGHT - 1, 1}
     , m_awaitingNewInput(false)
     , m_historyBottom(config.showOnScreenKeypad
         ? HISTORY_BOTTOM_WITH_KEYPAD
@@ -361,6 +364,7 @@ void CalculatorApp::update() {
 
 void CalculatorApp::handleKey(Key pressed) {
     if (pressed != Key::NONE) {
+        markInputLayoutDirty();
         processKey(pressed);
         m_needsRender = true;
     }
@@ -555,6 +559,23 @@ void CalculatorApp::requestRender() {
     m_needsRender = true;
 }
 
+void CalculatorApp::markInputLayoutDirty() {
+    // Cursor placement is derived from the parsed math layout. Any input edit or
+    // structural cursor move invalidates that geometry before the next draw.
+    m_inputLayoutDirty = true;
+}
+
+bool CalculatorApp::ensureInputLayout() {
+    if (!m_inputLayoutDirty) {
+        return m_cachedInputMeasured;
+    }
+
+    m_cachedInputMetrics = {0, FONT_CHAR_HEIGHT - 1, 1};
+    m_cachedInputMeasured = math_typeset::measure(m_inputBuffer, m_cachedInputMetrics);
+    m_inputLayoutDirty = false;
+    return m_cachedInputMeasured;
+}
+
 void CalculatorApp::drawHistory() {
     int startIndex = m_historyScroll;
     int y = HISTORY_TOP;
@@ -648,8 +669,16 @@ void CalculatorApp::drawInputRow() {
     }
 
     const int inputTop = inputY;
-    math_typeset::LayoutMetrics metrics{};
-    const bool measuredMath = math_typeset::measure(m_inputBuffer, metrics);
+    const int inputRowHeight = inputEntryHeight(m_inputBuffer, m_config.uiScale);
+    m_display.fillRect(0,
+                       inputTop,
+                       DISPLAY_WIDTH,
+                       std::min(inputRowHeight, DISPLAY_HEIGHT - inputTop),
+                       Display::BLACK);
+
+    math_typeset::LayoutMetrics metrics = m_cachedInputMetrics;
+    const bool measuredMath = ensureInputLayout();
+    metrics = m_cachedInputMetrics;
     const int uiScale = normalizedScale(m_config.uiScale);
     const float expressionScale = static_cast<float>(uiScale);
     const int baselineY = measuredMath
@@ -702,7 +731,6 @@ void CalculatorApp::drawInputRow() {
     int resultX = DISPLAY_WIDTH
                   - scaledTextWidth(m_resultBuffer, uiScale) - MARGIN;
     if (resultX < 0) resultX = 0;
-    const int inputRowHeight = inputEntryHeight(m_inputBuffer, uiScale);
     const int resultY = (uiScale > 1)
         ? inputY + inputRowHeight - ENTRY_VERTICAL_PADDING - scaledFontHeight(uiScale)
         : inputY + 10;
@@ -713,13 +741,12 @@ void CalculatorApp::drawInputRow() {
                         m_resultIsError ? Display::RED : Display::GREEN,
                         uiScale);
 
-    drawCursor(inputOriginX, baselineY, expressionScale, metrics, drewMath);
+    drawCursor(inputOriginX, baselineY, expressionScale, drewMath);
 }
 
 void CalculatorApp::drawCursor(int originX,
                                int baselineY,
                                float expressionScale,
-                               const math_typeset::LayoutMetrics& metrics,
                                bool usedMathLayout) {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto blinkMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
@@ -734,10 +761,12 @@ void CalculatorApp::drawCursor(int originX,
                                     cursorMetrics);
 
     int cursorX = originX;
-    int cursorTop = baselineY
-        - math_typeset::scaleLength(metrics.ascent, expressionScale);
+    const int defaultCursorAscent =
+        math_typeset::scaleLength(FONT_CHAR_HEIGHT - 1, expressionScale);
+    const int defaultCursorDescent = math_typeset::scaleLength(1, expressionScale);
+    int cursorTop = baselineY - defaultCursorAscent;
     int cursorHeight = std::max(2,
-        math_typeset::scaleLength(metrics.ascent + metrics.descent, expressionScale));
+        defaultCursorAscent + defaultCursorDescent);
 
     if (hasCursorMetrics) {
         cursorX += cursorMetrics.x;
@@ -751,6 +780,8 @@ void CalculatorApp::drawCursor(int originX,
 
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
         const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
+        cursorTop = std::max(0, cursorTop);
+        cursorHeight = std::min(cursorHeight, DISPLAY_HEIGHT - cursorTop);
         m_display.fillRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
     }
 }

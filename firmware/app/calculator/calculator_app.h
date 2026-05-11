@@ -52,6 +52,8 @@ public:
     void scrollHistory(int delta);
     void render();
     void requestRender();
+    const char* input() const { return m_inputBuffer; }
+    int cursorPos() const { return m_cursorPos; }
 
 private:
     Display& m_display;
@@ -64,6 +66,9 @@ private:
     int  m_inputLen;
     int  m_cursorPos;          // NEW — index within m_inputBuffer
     int  m_inputViewportX;
+    bool m_inputLayoutDirty;
+    bool m_cachedInputMeasured;
+    math_typeset::LayoutMetrics m_cachedInputMetrics;
     bool m_awaitingNewInput;
     int m_historyBottom;
     int m_historyHeight;
@@ -84,8 +89,9 @@ private:
 
     void drawHistory();
     void drawInputRow();
+    void markInputLayoutDirty();
+    bool ensureInputLayout();
     void drawCursor(int originX, int baselineY, float expressionScale,
-                    const math_typeset::LayoutMetrics& metrics,
                     bool usedMathLayout);
     void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();

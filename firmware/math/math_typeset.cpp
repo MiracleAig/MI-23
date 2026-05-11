@@ -27,6 +27,7 @@ struct Node {
         Root,
         Superscript,
         Parenthesized,
+        Function,
     } type;
 
     int textStart;
@@ -66,6 +67,7 @@ struct Box {
         Root,
         Superscript,
         Parenthesized,
+        Function,
     } type;
 
     LayoutMetrics metrics;
@@ -175,6 +177,25 @@ static bool matchWordAt(const Context& ctx, const char* word, int length) {
     return std::strncmp(&ctx.text[ctx.cursor], word, length) == 0;
 }
 
+static bool matchSingleArgumentFunctionAt(const Context& ctx, int& nameLength) {
+    static constexpr const char* FUNCTIONS[] = {
+        "asin", "acos", "atan", "acot", "asec", "acsc",
+        "sin", "cos", "tan", "cot", "sec", "csc", "ln",
+    };
+
+    for (const char* functionName : FUNCTIONS) {
+        const int length = static_cast<int>(std::strlen(functionName));
+        if (matchWordAt(ctx, functionName, length) &&
+            ctx.cursor + length < ctx.length &&
+            ctx.text[ctx.cursor + length] == '(') {
+            nameLength = length;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static int parseExpressionOrEmptyUntil(Context& ctx, char terminator) {
     skipSpaces(ctx);
     if (ctx.cursor < ctx.length && ctx.text[ctx.cursor] == terminator) {
@@ -243,6 +264,27 @@ static int parsePrimary(Context& ctx) {
         ctx.nodes[root].left = index;
         ctx.nodes[root].right = radicand;
         return root;
+    }
+
+    int functionNameLength = 0;
+    if (matchSingleArgumentFunctionAt(ctx, functionNameLength)) {
+        ctx.cursor += functionNameLength + 1;
+        const int argument = parseExpressionOrEmptyUntil(ctx, ')');
+        skipSpaces(ctx);
+        if (ctx.cursor >= ctx.length || ctx.text[ctx.cursor] != ')') {
+            ctx.parseError = true;
+            return -1;
+        }
+        ctx.cursor++;
+
+        const int function = addNode(ctx, Node::Type::Function);
+        if (function < 0) {
+            return -1;
+        }
+        ctx.nodes[function].textStart = start;
+        ctx.nodes[function].textLength = functionNameLength;
+        ctx.nodes[function].left = argument;
+        return function;
     }
 
     if (c == '(') {
@@ -443,6 +485,9 @@ static int nodeTextStart(const Context& parseCtx, int nodeIndex) {
         }
         return start;
     }
+    if (node.type == Node::Type::Function) {
+        return node.textStart;
+    }
     if (node.type == Node::Type::Parenthesized) {
         return nodeTextStart(parseCtx, node.left);
     }
@@ -477,6 +522,9 @@ static int nodeTextEnd(const Context& parseCtx, int nodeIndex) {
             end = std::max(end, nodeTextEnd(parseCtx, child));
         }
         return end;
+    }
+    if (node.type == Node::Type::Function) {
+        return nodeTextEnd(parseCtx, node.left) + 1;
     }
     if (node.type == Node::Type::Parenthesized) {
         return nodeTextEnd(parseCtx, node.left);
@@ -642,6 +690,26 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
         layout.boxes[box].left = inner;
         layout.boxes[box].metrics = {
             innerMetrics.width + parenWidth * 2,
+            std::max(innerMetrics.ascent, FONT_ASCENT),
+            std::max(innerMetrics.descent, FONT_DESCENT),
+        };
+        return box;
+    }
+
+    if (node.type == Node::Type::Function) {
+        const int inner = layoutNode(parseCtx, node.left, layout);
+
+        const int box = addBox(layout, Box::Type::Function);
+        if (box < 0) {
+            return -1;
+        }
+
+        const LayoutMetrics innerMetrics = layout.boxes[inner].metrics;
+        const int functionWidth = node.textLength * FONT_CHAR_ADVANCE;
+        const int parenWidth = FONT_CHAR_ADVANCE;
+        layout.boxes[box].left = inner;
+        layout.boxes[box].metrics = {
+            functionWidth + innerMetrics.width + parenWidth * 2,
             std::max(innerMetrics.ascent, FONT_ASCENT),
             std::max(innerMetrics.descent, FONT_DESCENT),
         };
@@ -897,13 +965,45 @@ static void drawBoxRecursive(const Context& parseCtx,
                       height,
                       color,
                       scale);
+        return;
+    }
+
+    if (node.type == Node::Type::Function) {
+        const int innerNode = node.left;
+        const int innerBox = box.left;
+        const int functionWidth = scaleLength(node.textLength * FONT_CHAR_ADVANCE, scale);
+        const int parenWidth = scaleLength(FONT_CHAR_ADVANCE, scale);
+
+        const LayoutMetrics scaledMetrics = scaleMetrics(box.metrics, scale);
+        const int top = baselineY - scaledMetrics.ascent;
+        const int height = scaledMetrics.ascent + scaledMetrics.descent;
+
+        drawTextSlice(display,
+                      parseCtx.text,
+                      node.textStart,
+                      node.textLength,
+                      x,
+                      baselineY,
+                      color,
+                      scale);
+        drawTallParen(display, true, x + functionWidth, top, height, color, scale);
+        drawBoxRecursive(parseCtx, layout, innerNode, innerBox,
+                         display, x + functionWidth + parenWidth, baselineY, color, scale);
+        drawTallParen(display,
+                      false,
+                      x + functionWidth + parenWidth
+                          + scaleLength(layout.boxes[innerBox].metrics.width, scale),
+                      top,
+                      height,
+                      color,
+                      scale);
     }
 }
 
 static CursorMetrics cursorAt(int x,
                               int baselineOffset,
-                              const LayoutMetrics& metrics,
                               float scale) {
+    const LayoutMetrics metrics = textMetrics(0);
     return {
         x,
         baselineOffset,
@@ -929,7 +1029,6 @@ static bool cursorMetricsRecursive(const Context& parseCtx,
                                                 node.textLength));
         outMetrics = cursorAt(x + scaleLength(offset * FONT_CHAR_ADVANCE, scale),
                               baselineOffset,
-                              box.metrics,
                               scale);
         return true;
     }
@@ -966,7 +1065,6 @@ static bool cursorMetricsRecursive(const Context& parseCtx,
 
         outMetrics = cursorAt(x + scaleLength(box.metrics.width, scale),
                               baselineOffset,
-                              box.metrics,
                               scale);
         return true;
     }
@@ -1093,13 +1191,12 @@ static bool cursorMetricsRecursive(const Context& parseCtx,
         const int innerEnd = nodeTextEnd(parseCtx, innerNode);
 
         if (cursorIndex < innerStart) {
-            outMetrics = cursorAt(x, baselineOffset, box.metrics, scale);
+            outMetrics = cursorAt(x, baselineOffset, scale);
             return true;
         }
         if (cursorIndex > innerEnd) {
             outMetrics = cursorAt(x + scaleLength(box.metrics.width, scale),
                                   baselineOffset,
-                                  box.metrics,
                                   scale);
             return true;
         }
@@ -1110,6 +1207,45 @@ static bool cursorMetricsRecursive(const Context& parseCtx,
                                       innerBox,
                                       cursorIndex,
                                       x + parenWidth,
+                                      baselineOffset,
+                                      scale,
+                                      outMetrics);
+    }
+
+    if (node.type == Node::Type::Function) {
+        const int innerNode = node.left;
+        const int innerBox = box.left;
+        const int functionWidth = scaleLength(node.textLength * FONT_CHAR_ADVANCE, scale);
+        const int parenWidth = scaleLength(FONT_CHAR_ADVANCE, scale);
+        const int functionNameEnd = node.textStart + node.textLength;
+        const int innerStart = nodeTextStart(parseCtx, innerNode);
+        const int innerEnd = nodeTextEnd(parseCtx, innerNode);
+
+        if (cursorIndex <= functionNameEnd) {
+            const int offset = std::max(0, std::min(cursorIndex - node.textStart,
+                                                    node.textLength));
+            outMetrics = cursorAt(x + scaleLength(offset * FONT_CHAR_ADVANCE, scale),
+                                  baselineOffset,
+                                  scale);
+            return true;
+        }
+        if (cursorIndex < innerStart) {
+            outMetrics = cursorAt(x + functionWidth, baselineOffset, scale);
+            return true;
+        }
+        if (cursorIndex > innerEnd) {
+            outMetrics = cursorAt(x + scaleLength(box.metrics.width, scale),
+                                  baselineOffset,
+                                  scale);
+            return true;
+        }
+
+        return cursorMetricsRecursive(parseCtx,
+                                      layout,
+                                      innerNode,
+                                      innerBox,
+                                      cursorIndex,
+                                      x + functionWidth + parenWidth,
                                       baselineOffset,
                                       scale,
                                       outMetrics);
@@ -1233,6 +1369,15 @@ static bool moveWithinFraction(const Context& parseCtx,
                                   move,
                                   desiredX,
                                   movedIndex);
+    } else if (node.type == Node::Type::Function) {
+        return moveWithinFraction(parseCtx,
+                                  layout,
+                                  node.left,
+                                  box.left,
+                                  cursorIndex,
+                                  move,
+                                  desiredX,
+                                  movedIndex);
     } else if (node.type == Node::Type::Superscript) {
         if (moveWithinFraction(parseCtx,
                                layout,
@@ -1307,6 +1452,44 @@ static bool moveAcrossSourceFractionBoundary(const char* expression,
             numeratorStart--;
         }
         movedIndex = std::max(0, numeratorStart);
+        return true;
+    }
+
+    return false;
+}
+
+static int functionNameStartBeforeParen(const char* expression, int openIndex) {
+    int start = openIndex;
+    while (start > 0 &&
+           std::isalpha(static_cast<unsigned char>(expression[start - 1]))) {
+        start--;
+    }
+    return start;
+}
+
+static bool moveAcrossSourceContainerBoundary(const char* expression,
+                                              int length,
+                                              int cursorIndex,
+                                              CursorMove move,
+                                              int& movedIndex) {
+    if (move == CursorMove::Left &&
+        cursorIndex > 0 &&
+        expression[cursorIndex - 1] == '(') {
+        movedIndex = functionNameStartBeforeParen(expression, cursorIndex - 1);
+        return true;
+    }
+
+    if (move == CursorMove::Left &&
+        cursorIndex > 0 &&
+        expression[cursorIndex - 1] == '^') {
+        movedIndex = cursorIndex - 1;
+        return true;
+    }
+
+    if (move == CursorMove::Right &&
+        cursorIndex < length &&
+        expression[cursorIndex] == ')') {
+        movedIndex = cursorIndex + 1;
         return true;
     }
 
@@ -1460,6 +1643,14 @@ int moveCursor(const char* expression, int cursorIndex, CursorMove move) {
                                          clampedCursor,
                                          move,
                                          movedIndex)) {
+        return std::max(0, std::min(movedIndex, length));
+    }
+
+    if (moveAcrossSourceContainerBoundary(expression,
+                                          length,
+                                          clampedCursor,
+                                          move,
+                                          movedIndex)) {
         return std::max(0, std::min(movedIndex, length));
     }
 
