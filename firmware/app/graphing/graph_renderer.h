@@ -11,6 +11,8 @@ struct GraphViewport {
     double xMax;
     double yMin;
     double yMax;
+    double xScale;
+    double yScale;
 
     bool isValid() const;
     int mathToScreenX(double x) const;
@@ -18,6 +20,29 @@ struct GraphViewport {
     double screenToMathX(int px) const;
     double screenToMathY(int py) const;
     bool containsScreenPoint(int px, int py) const;
+};
+
+enum class GraphErrorType {
+    None,
+    EmptyFunction,
+    InvalidExpression,
+    DomainError,
+    DivideByZero,
+    NoEnabledFunctions,
+    NoValidPoints,
+};
+
+const char* graphErrorText(GraphErrorType error);
+
+struct GraphFunction {
+    const char* expression;
+    bool enabled;
+    Color color;
+};
+
+struct GraphRenderResult {
+    bool drewAnyFunction;
+    GraphErrorType error;
 };
 
 class GraphRenderer {
@@ -29,11 +54,27 @@ public:
     const char* expression() const;
     void setExpression(const char* expression);
     bool evaluateExpression(double x, double& y) const;
-    void render(Display& display, const GraphViewport& viewport) const;
+    bool evaluateExpression(const char* expression,
+                            double x,
+                            double& y,
+                            GraphErrorType* error = nullptr) const;
+    GraphRenderResult render(Display& display, const GraphViewport& viewport) const;
+    GraphRenderResult render(Display& display,
+                             const GraphViewport& viewport,
+                             const GraphFunction* functions,
+                             int functionCount) const;
 
 private:
-    void drawAxes(Display& display, const GraphViewport& viewport) const;
-    bool drawExpression(Display& display, const GraphViewport& viewport) const;
+    struct FunctionRenderResult {
+        bool hasAnyValidPoint;
+        GraphErrorType error;
+    };
+
+    void drawGridAndAxes(Display& display, const GraphViewport& viewport) const;
+    FunctionRenderResult drawExpression(Display& display,
+                                        const GraphViewport& viewport,
+                                        const char* expression,
+                                        Color color) const;
     bool drawClippedLine(Display& display,
                          const GraphViewport& viewport,
                          int x0,

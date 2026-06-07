@@ -134,6 +134,10 @@ TEST(ExpressionParser, LogBaseX) {
     EXPECT_EVAL("log(2,8)", 3.0f);
 }
 
+TEST(ExpressionParser, CommonLog) {
+    EXPECT_EVAL("log(100)", 2.0f);
+}
+
 TEST(ExpressionParser, NaturalLog) {
     EXPECT_EVAL("ln(e)", 1.0f);
 }
@@ -170,6 +174,12 @@ TEST(ExpressionParser, LogDomainError) {
 
 TEST(ExpressionParser, LogArgumentDomainError) {
     ExprResult r = evaluate("log(2,0)");
+    EXPECT_FALSE(r.ok);
+    EXPECT_STREQ(r.error, "Log domain error");
+}
+
+TEST(ExpressionParser, CommonLogDomainError) {
+    ExprResult r = evaluate("log(0)");
     EXPECT_FALSE(r.ok);
     EXPECT_STREQ(r.error, "Log domain error");
 }

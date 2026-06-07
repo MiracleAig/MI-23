@@ -64,6 +64,16 @@ static bool isAsciiAlpha(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
+static float defaultTokenValue(TokenType type) {
+    if (type == TokenType::OP_LOG) {
+        return 1.0f;
+    }
+    if (type == TokenType::OP_ROOT) {
+        return 2.0f;
+    }
+    return 0.0f;
+}
+
 static bool matchFunction(const char* expr, int len, int index,
                           TokenType& type, int& matchLength) {
     for (const FunctionSpec& spec : FUNCTION_SPECS) {
@@ -274,7 +284,7 @@ static int tokenize(const char* expr, Token* tokens, float ansValue) {
                 tokens[count++] = { TokenType::OP_MULTIPLY, 0.0f };
             }
             if (count >= MAX_TOKENS) return -1;
-            tokens[count++] = { functionType, 0.0f };
+            tokens[count++] = { functionType, defaultTokenValue(functionType) };
             previousType     = functionType;
             hasPreviousToken = true;
             expectUnary      = true;
@@ -531,16 +541,23 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
             opStack[opTop++] = token;
         } else if (token.type == TokenType::COMMA) {
             bool foundParen = false;
+            int parenIndex = -1;
             while (opTop > 0) {
                 Token top = opStack[opTop - 1];
                 if (top.type == TokenType::PAREN_OPEN) {
                     foundParen = true;
+                    parenIndex = opTop - 1;
                     break;
                 }
                 if (outCount >= MAX_TOKENS) { return -1; }
                 postfix[outCount++] = opStack[--opTop];
             }
             if (!foundParen) { return -1; }
+            if (parenIndex > 0 &&
+                (opStack[parenIndex - 1].type == TokenType::OP_LOG ||
+                 opStack[parenIndex - 1].type == TokenType::OP_ROOT)) {
+                opStack[parenIndex - 1].value = 2.0f;
+            }
         } else if (token.type == TokenType::PAREN_OPEN) {
             if (opTop >= MAX_STACK) { return -1; }
             opStack[opTop++] = token;
@@ -619,6 +636,16 @@ static ExprResult evalPostfix(const Token* postfix, int count, bool hasXValue, f
                 valStack[valTop - 1] = unaryResult.value;
             }
         } else if (isOperator(token.type)) {
+            if (token.type == TokenType::OP_LOG && token.value < 1.5f) {
+                if (valTop < 1) return {false, 0, "Not enough operands"};
+                const float value = valStack[--valTop];
+                if (value <= 0.0f) {
+                    return {false, 0, "Log domain error"};
+                }
+                valStack[valTop++] = std::log10(value);
+                continue;
+            }
+
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];
             float a = valStack[--valTop];
