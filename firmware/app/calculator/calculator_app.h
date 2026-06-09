@@ -15,7 +15,7 @@ static constexpr int ROW_HEIGHT   = 20;
 static constexpr int HISTORY_TOP  = 4;
 static constexpr int HISTORY_BOTTOM_WITH_KEYPAD = 100;
 
-static const uint16_t COLOR_HISTORY_BG   = Display::rgb(10, 10, 18);
+static const uint16_t COLOR_HISTORY_BG   = Display::BLACK;
 static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
 static const uint16_t COLOR_SCROLLBAR_BG = Display::rgb(40, 40, 50);
 

@@ -25,6 +25,29 @@ static CalculatorApp makeCalculator(CalculatorNullDisplay& display,
     return CalculatorApp(display, keypad, config);
 }
 
+TEST(CalculatorAppPointerInput, HiddenOnScreenKeypadDoesNotAcceptClicks) {
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    CalculatorApp app = makeCalculator(display, keypad);
+
+    app.handlePointerDown(BTN_MARGIN + 1, BTN_AREA_TOP + BTN_MARGIN + 1);
+
+    EXPECT_STREQ(app.input(), "");
+}
+
+TEST(CalculatorAppPointerInput, VisibleOnScreenKeypadAcceptsClicks) {
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    CalculatorAppConfig config{};
+    config.showOnScreenKeypad = true;
+    CalculatorApp app(display, keypad, config);
+
+    app.handlePointerDown(BTN_MARGIN + 1, BTN_AREA_TOP + BTN_MARGIN + 1);
+
+    EXPECT_STREQ(app.input(), "sin()");
+    EXPECT_EQ(app.cursorPos(), 4);
+}
+
 TEST(CalculatorAppInput, TrigArgumentAcceptsPiPlusOne) {
     CalculatorNullDisplay display;
     CalculatorNullKeypad keypad;

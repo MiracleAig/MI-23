@@ -372,6 +372,10 @@ void CalculatorApp::handleKey(Key pressed) {
 }
 
 void CalculatorApp::handlePointerDown(int logicalX, int logicalY) {
+    if (!m_config.showOnScreenKeypad) {
+        return;
+    }
+
     const Button* btn = hitTest(logicalX, logicalY);
     if (btn) {
         handleKey(btn->key);

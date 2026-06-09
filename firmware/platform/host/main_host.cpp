@@ -70,8 +70,6 @@ public:
                 const Key keypadKey = m_simulatorKeypad.hitTest(logicalX, logicalY);
                 if (keypadKey != Key::NONE) {
                     dispatchKey(keypadKey);
-                } else if (m_activeApp == AppId::Calculator) {
-                    m_calculator.handlePointerDown(logicalX, logicalY);
                 }
             }
 
