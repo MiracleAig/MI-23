@@ -228,6 +228,26 @@ TEST(MathTypeset, TrigFunctionArgumentsKeepFullExpressionBody) {
     }
 }
 
+TEST(MathTypeset, LogFunctionAllowsEmptyArgumentLikeOtherFunctions) {
+    math_typeset::LayoutMetrics logFunction{};
+
+    ASSERT_TRUE(math_typeset::measure("log()", logFunction));
+    EXPECT_GT(logFunction.width, 0);
+}
+
+TEST(MathTypeset, SquareRootCursorAfterCloseParenSitsAfterRootLayout) {
+    math_typeset::LayoutMetrics metrics{};
+    math_typeset::CursorMetrics cursor{};
+
+    ASSERT_TRUE(math_typeset::measure("sqrt(9)", metrics));
+    ASSERT_TRUE(math_typeset::cursorMetrics("sqrt(9)",
+                                            static_cast<int>(std::strlen("sqrt(9)")),
+                                            1.0f,
+                                            cursor));
+
+    EXPECT_EQ(cursor.x, metrics.width);
+}
+
 TEST(MathTypesetCursor, UpMovesFromDenominatorToNumerator) {
     const char* expression = "12/345";
     const int start = 4; // inside denominator

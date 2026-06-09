@@ -69,6 +69,30 @@ TEST(SimulatorKeypadPointerInput, VisibleFunctionButtonMapsToOneFunctionKey) {
     EXPECT_EQ(keypad.hitTest(cosX, SIMULATOR_KEYPAD_Y - 1), Key::NONE);
 }
 
+TEST(SimulatorKeypadPointerInput, VisibleSequenceMapsToExpectedCosExpressionKeys) {
+    SimulatorKeypad keypad;
+    constexpr int keyCols = 6;
+    constexpr int keyRows = 7;
+    constexpr int keyMargin = 4;
+    constexpr int keyW =
+        (SIMULATOR_WINDOW_WIDTH - keyMargin * (keyCols + 1)) / keyCols;
+    constexpr int keyH =
+        (SIMULATOR_KEYPAD_HEIGHT - keyMargin * (keyRows + 1)) / keyRows;
+
+    auto keyAt = [&](int row, int col) {
+        const int x = keyMargin + col * (keyW + keyMargin) + keyW / 2;
+        const int y = SIMULATOR_KEYPAD_Y + keyMargin + row * (keyH + keyMargin)
+            + keyH / 2;
+        return keypad.hitTest(x, y);
+    };
+
+    EXPECT_EQ(keyAt(0, 1), Key::COS);
+    EXPECT_EQ(keyAt(4, 1), Key::E_CONST);
+    EXPECT_EQ(keyAt(5, 3), Key::PLUS);
+    EXPECT_EQ(keyAt(2, 5), Key::NUM_3);
+    EXPECT_EQ(keyAt(4, 4), Key::CLOSE_PAREN);
+}
+
 TEST(CalculatorAppInput, FunctionButtonsInsertOnlyOpenCallPrefix) {
     struct Case {
         Key key;
@@ -106,6 +130,20 @@ TEST(CalculatorAppInput, FunctionButtonsInsertOnlyOpenCallPrefix) {
     }
 }
 
+TEST(CalculatorAppInput, ParenthesisButtonsInsertLiteralCharacters) {
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    CalculatorApp app = makeCalculator(display, keypad);
+
+    app.handleKey(Key::OPEN_PAREN);
+    EXPECT_STREQ(app.input(), "(");
+    EXPECT_EQ(app.cursorPos(), 1);
+
+    app.handleKey(Key::CLOSE_PAREN);
+    EXPECT_STREQ(app.input(), "()");
+    EXPECT_EQ(app.cursorPos(), 2);
+}
+
 TEST(CalculatorAppInput, TrigArgumentAcceptsPiPlusOne) {
     CalculatorNullDisplay display;
     CalculatorNullKeypad keypad;
@@ -119,6 +157,36 @@ TEST(CalculatorAppInput, TrigArgumentAcceptsPiPlusOne) {
     app.handleKey(Key::CLOSE_PAREN);
 
     EXPECT_STREQ(app.input(), expected);
+    EXPECT_EQ(app.cursorPos(), 8);
+}
+
+TEST(CalculatorAppInput, VisibleKeypadCosSequenceBuildsExpectedExpression) {
+    SimulatorKeypad simulatorKeypad;
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    CalculatorApp app = makeCalculator(display, keypad);
+    constexpr int keyCols = 6;
+    constexpr int keyRows = 7;
+    constexpr int keyMargin = 4;
+    constexpr int keyW =
+        (SIMULATOR_WINDOW_WIDTH - keyMargin * (keyCols + 1)) / keyCols;
+    constexpr int keyH =
+        (SIMULATOR_KEYPAD_HEIGHT - keyMargin * (keyRows + 1)) / keyRows;
+
+    auto pressVisible = [&](int row, int col) {
+        const int x = keyMargin + col * (keyW + keyMargin) + keyW / 2;
+        const int y = SIMULATOR_KEYPAD_Y + keyMargin + row * (keyH + keyMargin)
+            + keyH / 2;
+        app.handleKey(simulatorKeypad.hitTest(x, y));
+    };
+
+    pressVisible(0, 1); // cos
+    pressVisible(4, 1); // e
+    pressVisible(5, 3); // +
+    pressVisible(2, 5); // 3
+    pressVisible(4, 4); // )
+
+    EXPECT_STREQ(app.input(), "cos(e+3)");
     EXPECT_EQ(app.cursorPos(), 8);
 }
 
@@ -206,4 +274,41 @@ TEST(CalculatorAppInput, FunctionCallCanBeClosedManuallyBeforeContinuing) {
 
     EXPECT_STREQ(app.input(), "sin(1)+2");
     EXPECT_EQ(app.cursorPos(), 8);
+}
+
+TEST(CalculatorAppInput, FunctionCallsWithConstantsStayUncorruptedAfterCloseParen) {
+    struct Case {
+        Key function;
+        Key first;
+        Key op;
+        Key second;
+        const char* expected;
+    };
+
+    constexpr Case cases[] = {
+        {Key::COS, Key::E_CONST, Key::PLUS, Key::NUM_3, "cos(e+3)"},
+        {Key::COS, Key::E_CONST, Key::PLUS, Key::NUM_4, "cos(e+4)"},
+        {Key::SIN, Key::NUM_1, Key::NONE, Key::NONE, "sin(1)"},
+        {Key::LOG, Key::NUM_1, Key::NONE, Key::NUM_0, "log(10)"},
+        {Key::SQRT, Key::NUM_9, Key::NONE, Key::NONE, "sqrt(9)"},
+    };
+
+    for (const Case& c : cases) {
+        CalculatorNullDisplay display;
+        CalculatorNullKeypad keypad;
+        CalculatorApp app = makeCalculator(display, keypad);
+
+        app.handleKey(c.function);
+        app.handleKey(c.first);
+        if (c.op != Key::NONE) {
+            app.handleKey(c.op);
+        }
+        if (c.second != Key::NONE) {
+            app.handleKey(c.second);
+        }
+        app.handleKey(Key::CLOSE_PAREN);
+
+        EXPECT_STREQ(app.input(), c.expected);
+        EXPECT_EQ(app.cursorPos(), static_cast<int>(std::strlen(c.expected)));
+    }
 }

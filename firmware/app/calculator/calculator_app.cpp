@@ -30,7 +30,6 @@ static const uint16_t COLOR_BTN_NORMAL  = Display::rgb( 55,  55,  75);
 static const uint16_t COLOR_BTN_ACTION  = Display::rgb( 30,  90, 140); // ENT / CLR
 static const uint16_t COLOR_BTN_FN      = Display::rgb( 80,  50, 100); // SIN/COS/TAN/π
 static const uint16_t COLOR_BTN_TEXT    = Display::WHITE;
-static constexpr char PAREN_PAIR_TEXT[]  = "()";
 static constexpr int ENTRY_VERTICAL_PADDING = 2;
 static constexpr int SCALED_RESULT_GAP = 4;
 
@@ -112,14 +111,6 @@ static bool insertTextAtCursor(char* buffer, int capacity, int& length,
     length += insertLen;
     cursorPos += insertLen;
     return true;
-}
-
-static bool skipExistingCloseParen(const char* buffer, int length, int& cursorPos) {
-    if (cursorPos < length && buffer[cursorPos] == ')') {
-        cursorPos++;
-        return true;
-    }
-    return false;
 }
 
 static void clearInputAfterResult(char* inputBuffer, int& inputLen, int& cursorPos,
@@ -460,20 +451,13 @@ void CalculatorApp::processKey(Key pressed) {
         insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
                            m_inputLen, m_cursorPos, "Ans");
     } else if (pressed == Key::OPEN_PAREN) {
-        if (insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
-                               m_inputLen, m_cursorPos, PAREN_PAIR_TEXT)) {
-            m_cursorPos--;
-        }
+        char text[] = {toChar(pressed), '\0'};
+        insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
+                           m_inputLen, m_cursorPos, text);
     } else if (pressed == Key::CLOSE_PAREN) {
-        if (!skipExistingCloseParen(m_inputBuffer, m_inputLen, m_cursorPos) &&
-            m_inputLen < 127) {
-            memmove(&m_inputBuffer[m_cursorPos + 1],
-                    &m_inputBuffer[m_cursorPos],
-                    m_inputLen - m_cursorPos + 1);
-            m_inputBuffer[m_cursorPos] = toChar(pressed);
-            m_inputLen++;
-            m_cursorPos++;
-        }
+        char text[] = {toChar(pressed), '\0'};
+        insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
+                           m_inputLen, m_cursorPos, text);
     } else if (isPrintable(pressed) && m_inputLen < 127) {
         // Insert character at cursor position (not just append)
         // First make room by shifting everything from cursorPos right by one
