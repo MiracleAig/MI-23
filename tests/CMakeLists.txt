@@ -15,6 +15,7 @@ add_executable(mi23_tests
         ../firmware/app/calculator/calculator_app.cpp
         ../firmware/app/graphing/graph_app.cpp
         ../firmware/app/graphing/graph_renderer.cpp
+        ../firmware/platform/host/simulator_keypad.cpp
 )
 
 target_include_directories(mi23_tests

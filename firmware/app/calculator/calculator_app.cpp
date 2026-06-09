@@ -78,22 +78,22 @@ static void drawPlainTextScaled(Display& display,
 
 static const char* functionInsertText(Key key) {
     switch (key) {
-        case Key::SQRT: return "sqrt()";
-        case Key::ROOT: return "root(,)";
-        case Key::SIN:  return "sin()";
-        case Key::COS:  return "cos()";
-        case Key::TAN:  return "tan()";
-        case Key::COT:  return "cot()";
-        case Key::SEC:  return "sec()";
-        case Key::CSC:  return "csc()";
-        case Key::ASIN: return "asin()";
-        case Key::ACOS: return "acos()";
-        case Key::ATAN: return "atan()";
-        case Key::ACOT: return "acot()";
-        case Key::ASEC: return "asec()";
-        case Key::ACSC: return "acsc()";
-        case Key::LOG:  return "log(,)";
-        case Key::LN:   return "ln()";
+        case Key::SQRT: return "sqrt(";
+        case Key::ROOT: return "root(";
+        case Key::SIN:  return "sin(";
+        case Key::COS:  return "cos(";
+        case Key::TAN:  return "tan(";
+        case Key::COT:  return "cot(";
+        case Key::SEC:  return "sec(";
+        case Key::CSC:  return "csc(";
+        case Key::ASIN: return "asin(";
+        case Key::ACOS: return "acos(";
+        case Key::ATAN: return "atan(";
+        case Key::ACOT: return "acot(";
+        case Key::ASEC: return "asec(";
+        case Key::ACSC: return "acsc(";
+        case Key::LOG:  return "log(";
+        case Key::LN:   return "ln(";
         default: return nullptr;
     }
 }
@@ -451,14 +451,8 @@ void CalculatorApp::processKey(Key pressed) {
                               m_awaitingNewInput);
 
         const char* insertText = functionInsertText(pressed);
-        if (insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
-                               m_inputLen, m_cursorPos, insertText)) {
-            if (pressed == Key::LOG || pressed == Key::ROOT) {
-                m_cursorPos -= 2;
-            } else {
-                m_cursorPos--;
-            }
-        }
+        insertTextAtCursor(m_inputBuffer, sizeof(m_inputBuffer),
+                           m_inputLen, m_cursorPos, insertText);
     } else if (pressed == Key::ANS) {
         clearInputAfterResult(m_inputBuffer, m_inputLen, m_cursorPos,
                               m_resultBuffer, m_resultIsError,
