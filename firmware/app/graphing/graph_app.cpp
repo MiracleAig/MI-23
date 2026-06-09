@@ -644,11 +644,20 @@ void GraphApp::renderEditor(Display& display, int x, int y, int w, int h) {
         char label[8];
         std::snprintf(label, sizeof(label), "Y%d", i + 1);
         display.drawText(label, x + 10, rowY, FUNCTION_COLORS[i]);
-        display.drawText(m_functions[i].enabled ? "=" : " off", x + 24, rowY, COLOR_MUTED);
 
         const char* expression = selected ? m_editBuffer : m_functions[i].expression;
-        const int expressionX = selected ? x + 42 : x + 48;
-        drawTextFit(display, expression, expressionX, rowY, w - (expressionX - x) - 12, COLOR_TEXT);
+        const bool hasExpression = expression && expression[0] != '\0';
+        const bool showPlaceholder = !selected && !hasExpression;
+        const int expressionX = x + 42;
+
+        display.drawText("=", x + 24, rowY, COLOR_MUTED);
+        if (showPlaceholder) {
+            drawTextFit(display, "off", expressionX, rowY,
+                        w - (expressionX - x) - 12, COLOR_MUTED);
+        } else if (hasExpression) {
+            drawTextFit(display, expression, expressionX, rowY,
+                        w - (expressionX - x) - 12, COLOR_TEXT);
+        }
 
         if (selected) {
             const int cursorX = expressionX + m_editCursor * FONT_CHAR_ADVANCE;
