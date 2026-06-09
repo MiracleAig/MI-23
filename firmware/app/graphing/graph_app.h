@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/graphing/graph_renderer.h"
+#include "app/settings/settings_state.h"
 #include "hal/keypad.h"
 
 enum class GraphMode {
@@ -22,7 +23,7 @@ class GraphApp {
 public:
     static constexpr int FUNCTION_COUNT = 5;
 
-    GraphApp();
+    explicit GraphApp(const SettingsState* settings = nullptr);
 
     void enter();
     void handleKey(Key key);
@@ -48,6 +49,7 @@ private:
     };
 
     GraphRenderer m_renderer;
+    const SettingsState* m_settings;
     GraphMode m_mode;
     bool m_needsRender;
     bool m_editHasError;

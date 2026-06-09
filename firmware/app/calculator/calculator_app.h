@@ -5,6 +5,7 @@
 #pragma once
 
 #include "history.h"
+#include "app/settings/settings_state.h"
 #include "hal/display.h"
 #include "hal/keypad.h"
 #include "math/math_typeset.h"
@@ -36,6 +37,7 @@ struct Button {
 struct CalculatorAppConfig {
     bool showOnScreenKeypad = false;
     int uiScale = 1;
+    const SettingsState* settings = nullptr;
 };
 
 class CalculatorApp {
@@ -54,6 +56,8 @@ public:
     void requestRender();
     const char* input() const { return m_inputBuffer; }
     int cursorPos() const { return m_cursorPos; }
+    int historySize() const;
+    const HistoryEntry& historyAt(int index) const;
 
 private:
     Display& m_display;
@@ -95,8 +99,8 @@ private:
                     bool usedMathLayout);
     void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();
-    int historySize() const;
-    const HistoryEntry& historyAt(int index) const;
+    int currentUiScale() const;
+    int currentPrecision() const;
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {

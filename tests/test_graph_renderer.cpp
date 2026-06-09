@@ -15,6 +15,22 @@ public:
     void present() override {}
 };
 
+class CountingDisplay : public NullDisplay {
+public:
+    int lineFillCount = 0;
+    int pixelCount = 0;
+
+    void drawPixel(int, int, Color) override {
+        pixelCount++;
+    }
+
+    void fillRect(int, int, int w, int h, Color) override {
+        if (w == 1 || h == 1) {
+            lineFillCount++;
+        }
+    }
+};
+
 } // namespace
 
 TEST(GraphViewport, ConvertsMathAndScreenCoordinates) {
@@ -123,6 +139,56 @@ TEST(GraphRenderer, RendersMultipleEnabledFunctions) {
     const GraphRenderResult result = renderer.render(display, viewport, functions, 3);
     EXPECT_TRUE(result.drewAnyFunction);
     EXPECT_EQ(result.error, GraphErrorType::None);
+}
+
+TEST(GraphRenderer, GridAndAxesOptionsSuppressReferenceLines) {
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"x", true, Display::WHITE},
+    };
+
+    CountingDisplay defaultDisplay;
+    GraphRenderOptions defaultOptions;
+    const GraphRenderResult defaultResult =
+        renderer.render(defaultDisplay, viewport, functions, 1, defaultOptions);
+    EXPECT_TRUE(defaultResult.drewAnyFunction);
+
+    CountingDisplay hiddenDisplay;
+    GraphRenderOptions hiddenOptions;
+    hiddenOptions.showGrid = false;
+    hiddenOptions.showAxes = false;
+    const GraphRenderResult hiddenResult =
+        renderer.render(hiddenDisplay, viewport, functions, 1, hiddenOptions);
+    EXPECT_TRUE(hiddenResult.drewAnyFunction);
+
+    EXPECT_LT(hiddenDisplay.lineFillCount, defaultDisplay.lineFillCount);
+}
+
+TEST(GraphRenderer, SamplingOptionChangesCurveDetailWork) {
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"sin(x)", true, Display::WHITE},
+    };
+
+    CountingDisplay lowDisplay;
+    GraphRenderOptions lowOptions;
+    lowOptions.showGrid = false;
+    lowOptions.showAxes = false;
+    lowOptions.samplesPerPixel = 1;
+    const GraphRenderResult lowResult =
+        renderer.render(lowDisplay, viewport, functions, 1, lowOptions);
+    EXPECT_TRUE(lowResult.drewAnyFunction);
+
+    CountingDisplay highDisplay;
+    GraphRenderOptions highOptions = lowOptions;
+    highOptions.samplesPerPixel = 5;
+    const GraphRenderResult highResult =
+        renderer.render(highDisplay, viewport, functions, 1, highOptions);
+    EXPECT_TRUE(highResult.drewAnyFunction);
+
+    EXPECT_GT(highDisplay.pixelCount, lowDisplay.pixelCount);
 }
 
 TEST(GraphRenderer, ReportsNoEnabledFunctions) {

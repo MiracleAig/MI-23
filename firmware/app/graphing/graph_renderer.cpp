@@ -189,13 +189,21 @@ bool GraphRenderer::evaluateExpression(const char* expression,
 GraphRenderResult GraphRenderer::render(Display& display,
                                         const GraphViewport& viewport) const {
     const GraphFunction function = {m_expression, true, GRAPH_CURVE};
-    return render(display, viewport, &function, 1);
+    return render(display, viewport, &function, 1, {});
 }
 
 GraphRenderResult GraphRenderer::render(Display& display,
                                         const GraphViewport& viewport,
                                         const GraphFunction* functions,
                                         int functionCount) const {
+    return render(display, viewport, functions, functionCount, {});
+}
+
+GraphRenderResult GraphRenderer::render(Display& display,
+                                        const GraphViewport& viewport,
+                                        const GraphFunction* functions,
+                                        int functionCount,
+                                        const GraphRenderOptions& options) const {
     if (!viewport.isValid()) {
         return {false, GraphErrorType::InvalidExpression};
     }
@@ -211,7 +219,7 @@ GraphRenderResult GraphRenderer::render(Display& display,
                      viewport.screenHeight,
                      GRAPH_BORDER);
 
-    drawGridAndAxes(display, viewport);
+    drawGridAndAxes(display, viewport, options);
 
     bool enabledAnyFunction = false;
     bool drewAnyFunction = false;
@@ -225,7 +233,8 @@ GraphRenderResult GraphRenderer::render(Display& display,
         const FunctionRenderResult result = drawExpression(display,
                                                            viewport,
                                                            functions[i].expression,
-                                                           functions[i].color);
+                                                           functions[i].color,
+                                                           options.samplesPerPixel);
         if (result.hasAnyValidPoint) {
             drewAnyFunction = true;
         } else if (firstError == GraphErrorType::None && result.error != GraphErrorType::None) {
@@ -255,42 +264,52 @@ GraphRenderResult GraphRenderer::render(Display& display,
     return {true, GraphErrorType::None};
 }
 
-void GraphRenderer::drawGridAndAxes(Display& display, const GraphViewport& viewport) const {
+void GraphRenderer::drawGridAndAxes(Display& display,
+                                    const GraphViewport& viewport,
+                                    const GraphRenderOptions& options) const {
     const bool hasXAxis = viewport.yMin <= 0.0 && viewport.yMax >= 0.0;
     const bool hasYAxis = viewport.xMin <= 0.0 && viewport.xMax >= 0.0;
 
-    int gridCount = 0;
     const double firstXGrid = std::ceil(viewport.xMin / viewport.xScale) * viewport.xScale;
-    for (double value = firstXGrid;
-         value <= viewport.xMax + viewport.xScale * 0.5 &&
-         gridCount < MAX_GRID_LINES_PER_AXIS;
-         value += viewport.xScale, ++gridCount) {
-        if (std::fabs(value) < 1e-9) {
-            continue;
-        }
-        const int px = viewport.mathToScreenX(value);
-        display.drawVerticalLine(px,
-                                 viewport.screenY,
-                                 viewport.screenHeight,
-                                 GRAPH_GRID);
-    }
-
-    gridCount = 0;
     const double firstYGrid = std::ceil(viewport.yMin / viewport.yScale) * viewport.yScale;
-    for (double value = firstYGrid;
-         value <= viewport.yMax + viewport.yScale * 0.5 &&
-         gridCount < MAX_GRID_LINES_PER_AXIS;
-         value += viewport.yScale, ++gridCount) {
-        if (std::fabs(value) < 1e-9) {
-            continue;
+
+    if (options.showGrid) {
+        int gridCount = 0;
+        for (double value = firstXGrid;
+             value <= viewport.xMax + viewport.xScale * 0.5 &&
+             gridCount < MAX_GRID_LINES_PER_AXIS;
+             value += viewport.xScale, ++gridCount) {
+            if (std::fabs(value) < 1e-9) {
+                continue;
+            }
+            const int px = viewport.mathToScreenX(value);
+            display.drawVerticalLine(px,
+                                     viewport.screenY,
+                                     viewport.screenHeight,
+                                     GRAPH_GRID);
         }
-        const int py = viewport.mathToScreenY(value);
-        display.drawHorizontalLine(viewport.screenX,
-                                   py,
-                                   viewport.screenWidth,
-                                   GRAPH_GRID);
+
+        gridCount = 0;
+        for (double value = firstYGrid;
+             value <= viewport.yMax + viewport.yScale * 0.5 &&
+             gridCount < MAX_GRID_LINES_PER_AXIS;
+             value += viewport.yScale, ++gridCount) {
+            if (std::fabs(value) < 1e-9) {
+                continue;
+            }
+            const int py = viewport.mathToScreenY(value);
+            display.drawHorizontalLine(viewport.screenX,
+                                       py,
+                                       viewport.screenWidth,
+                                       GRAPH_GRID);
+        }
     }
 
+    if (!options.showAxes) {
+        return;
+    }
+
+    int gridCount = 0;
     int axisY = viewport.screenY + viewport.screenHeight - 1;
     if (hasXAxis) {
         axisY = viewport.mathToScreenY(0.0);
@@ -349,7 +368,8 @@ void GraphRenderer::drawGridAndAxes(Display& display, const GraphViewport& viewp
 GraphRenderer::FunctionRenderResult GraphRenderer::drawExpression(Display& display,
                                                                   const GraphViewport& viewport,
                                                                   const char* expression,
-                                                                  Color color) const {
+                                                                  Color color,
+                                                                  int samplesPerPixel) const {
     bool hasPrevious = false;
     int previousX = 0;
     int previousY = 0;
@@ -362,7 +382,10 @@ GraphRenderer::FunctionRenderResult GraphRenderer::drawExpression(Display& displ
                              viewport.screenHeight * OFFSCREEN_MARGIN_MULTIPLIER;
     const int offscreenBottom = viewport.screenY + viewport.screenHeight - 1 +
                                 viewport.screenHeight * OFFSCREEN_MARGIN_MULTIPLIER;
-    const int sampleCount = viewport.screenWidth > 0 ? viewport.screenWidth * 3 : 0;
+    const int sampleMultiplier = samplesPerPixel <= 0 ? 3 : samplesPerPixel;
+    const int sampleCount = viewport.screenWidth > 0
+        ? viewport.screenWidth * sampleMultiplier
+        : 0;
     const int maxJumpPixels = viewport.screenHeight + viewport.screenHeight / 2;
     const double maxJumpMath = (viewport.yMax - viewport.yMin) * 1.5;
 

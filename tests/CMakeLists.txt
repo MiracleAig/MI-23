@@ -12,9 +12,12 @@ add_executable(mi23_tests
         test_expression.cpp
         test_graph_renderer.cpp
         test_math_typeset.cpp
+        test_settings_app.cpp
         ../firmware/app/calculator/calculator_app.cpp
         ../firmware/app/graphing/graph_app.cpp
         ../firmware/app/graphing/graph_renderer.cpp
+        ../firmware/app/settings/settings_app.cpp
+        ../firmware/app/settings/settings_state.cpp
         ../firmware/platform/host/simulator_keypad.cpp
 )
 

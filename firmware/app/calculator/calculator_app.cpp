@@ -267,6 +267,19 @@ static bool cursorMoveForKey(Key key, math_typeset::CursorMove& move) {
     }
 }
 
+static ExpressionOptions expressionOptionsForSettings(const SettingsState* settings) {
+    ExpressionOptions options{};
+    if (settings && settings->angleMode == AngleMode::Degrees) {
+        options.angleMode = ExpressionAngleMode::Degrees;
+    }
+    return options;
+}
+
+static void formatResult(char* buffer, int capacity, float value, int precision) {
+    const int clampedPrecision = std::clamp(precision, 0, 12);
+    snprintf(buffer, static_cast<size_t>(capacity), "%.*f", clampedPrecision, value);
+}
+
 static void drawButtonRootIcon(Display& display,
                                int x,
                                int y,
@@ -355,8 +368,19 @@ void CalculatorApp::update() {
 
 void CalculatorApp::handleKey(Key pressed) {
     if (pressed != Key::NONE) {
+        if (m_config.settings && m_config.settings->developer.inputEventLogs) {
+            printf("[input] calculator key=%d before='%s' cursor=%d\n",
+                   static_cast<int>(pressed),
+                   m_inputBuffer,
+                   m_cursorPos);
+        }
         markInputLayoutDirty();
         processKey(pressed);
+        if (m_config.settings && m_config.settings->developer.inputEventLogs) {
+            printf("[input] calculator after='%s' cursor=%d\n",
+                   m_inputBuffer,
+                   m_cursorPos);
+        }
         m_needsRender = true;
     }
     clampScroll();
@@ -421,10 +445,17 @@ void CalculatorApp::processKey(Key pressed) {
 
     } else if (pressed == Key::ENTER) {
         if (m_inputLen > 0) {
-            ExprResult result = evaluate(m_inputBuffer, m_lastAnswer);
+            if (m_config.settings && m_config.settings->developer.parserLogs) {
+                printf("[parser] evaluate '%s'\n", m_inputBuffer);
+            }
+            ExprResult result = evaluate(m_inputBuffer,
+                                         m_lastAnswer,
+                                         expressionOptionsForSettings(m_config.settings));
             if (result.ok) {
-                snprintf(m_resultBuffer, sizeof(m_resultBuffer),
-                         "%.6g", result.value);
+                formatResult(m_resultBuffer,
+                             static_cast<int>(sizeof(m_resultBuffer)),
+                             result.value,
+                             currentPrecision());
                 m_resultIsError = false;
                 m_lastAnswer = result.value;
             } else {
@@ -477,7 +508,7 @@ void CalculatorApp::pushHistory() {
                                                   return historyAt(i);
                                               },
                                               m_historyHeight,
-                                              m_config.uiScale);
+                                              currentUiScale());
     bool wasNearBottom = (m_historyScroll >= std::max(0, maxScrollBefore - 1));
 
     if (m_historyCount < MAX_HISTORY) {
@@ -495,7 +526,7 @@ void CalculatorApp::pushHistory() {
                                                   return historyAt(i);
                                               },
                                               m_historyHeight,
-                                              m_config.uiScale);
+                                              currentUiScale());
     }
 
     m_inputLen        = 0;
@@ -510,13 +541,13 @@ void CalculatorApp::clampScroll() {
     if (m_historyScroll < 0) m_historyScroll = 0;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
-                                                                    m_config.uiScale);
+                                                                    currentUiScale());
     int maxScroll = bottomHistoryScroll(historySize(),
                                         [this](int i) -> const HistoryEntry& {
                                             return historyAt(i);
                                         },
                                         historyViewportHeight,
-                                        m_config.uiScale);
+                                        currentUiScale());
     if (m_historyScroll > maxScroll) m_historyScroll = maxScroll;
 }
 
@@ -563,11 +594,11 @@ void CalculatorApp::drawHistory() {
     int y = HISTORY_TOP;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
-                                                                    m_config.uiScale);
+                                                                    currentUiScale());
     const int historyBottom = HISTORY_TOP + historyViewportHeight;
 
     for (int i = startIndex; i < historySize(); i++) {
-        const int entryHeight = historyEntryHeight(historyAt(i), m_config.uiScale);
+        const int entryHeight = historyEntryHeight(historyAt(i), currentUiScale());
         if (y >= historyBottom || y + entryHeight > historyBottom) {
             break;
         }
@@ -583,7 +614,7 @@ void CalculatorApp::drawHistory() {
         math_typeset::LayoutMetrics historyMetrics{};
         const bool measuredMath = math_typeset::measure(historyAt(i).input.c_str(),
                                                         historyMetrics);
-        const int uiScale = normalizedScale(m_config.uiScale);
+        const int uiScale = normalizedScale(currentUiScale());
         const float expressionScale = static_cast<float>(uiScale);
         const int baselineY = measuredMath
             ? baselineForEntry(rowTop, historyMetrics, expressionScale)
@@ -627,7 +658,7 @@ void CalculatorApp::drawHistory() {
                                             return historyAt(i);
                                         },
                                         historyViewportHeight,
-                                        m_config.uiScale);
+                                        currentUiScale());
     if (maxScroll > 0) {
         drawScrollbar(maxScroll, historyViewportHeight);
     }
@@ -636,13 +667,13 @@ void CalculatorApp::drawHistory() {
 void CalculatorApp::drawInputRow() {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
-                                                                    m_config.uiScale);
+                                                                    currentUiScale());
     int inputY = HISTORY_TOP
         + visibleHistoryHeight(historySize(),
                                [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                m_historyScroll,
                                historyViewportHeight,
-                               m_config.uiScale);
+                               currentUiScale());
 
     if (inputY > HISTORY_TOP) {
         m_display.fillRect(MARGIN, inputY - 2,
@@ -651,7 +682,7 @@ void CalculatorApp::drawInputRow() {
     }
 
     const int inputTop = inputY;
-    const int inputRowHeight = inputEntryHeight(m_inputBuffer, m_config.uiScale);
+    const int inputRowHeight = inputEntryHeight(m_inputBuffer, currentUiScale());
     m_display.fillRect(0,
                        inputTop,
                        DISPLAY_WIDTH,
@@ -661,7 +692,7 @@ void CalculatorApp::drawInputRow() {
     math_typeset::LayoutMetrics metrics = m_cachedInputMetrics;
     const bool measuredMath = ensureInputLayout();
     metrics = m_cachedInputMetrics;
-    const int uiScale = normalizedScale(m_config.uiScale);
+    const int uiScale = normalizedScale(currentUiScale());
     const float expressionScale = static_cast<float>(uiScale);
     const int baselineY = measuredMath
         ? baselineForEntry(inputTop, metrics, expressionScale)
@@ -766,6 +797,13 @@ void CalculatorApp::drawCursor(int originX,
         cursorHeight = std::min(cursorHeight, DISPLAY_HEIGHT - cursorTop);
         m_display.fillRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
     }
+
+    if (m_config.settings && m_config.settings->developer.showCursorPosition) {
+        char label[28] = {};
+        snprintf(label, sizeof(label), "cur:%d x:%d", m_cursorPos, cursorX);
+        m_display.drawText(label, MARGIN, DISPLAY_HEIGHT - FONT_CHAR_HEIGHT - 1,
+                           Display::GREEN);
+    }
 }
 
 void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
@@ -778,9 +816,9 @@ void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
                                                    [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                                    m_historyScroll,
                                                    viewportHeight,
-                                                   m_config.uiScale);
+                                                   currentUiScale());
     const int contentHeight = std::max(1,
-        viewportHeight + inputEntryHeight("", m_config.uiScale) * maxScroll);
+        viewportHeight + inputEntryHeight("", currentUiScale()) * maxScroll);
     int scrollbarHeight = std::max(8,
         (viewportHeight * std::max(1, visibleHeight)) / contentHeight);
     int scrollbarY = HISTORY_TOP
@@ -839,4 +877,16 @@ int CalculatorApp::historySize() const {
 const HistoryEntry& CalculatorApp::historyAt(int index) const {
     const int slot = (m_historyStart + index) % MAX_HISTORY;
     return m_history[slot];
+}
+
+int CalculatorApp::currentUiScale() const {
+    return m_config.settings
+        ? m_config.settings->uiScaleValue(m_config.uiScale)
+        : m_config.uiScale;
+}
+
+int CalculatorApp::currentPrecision() const {
+    return m_config.settings
+        ? m_config.settings->calculatorPrecision
+        : 6;
 }

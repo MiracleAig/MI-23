@@ -45,6 +45,12 @@ struct GraphRenderResult {
     GraphErrorType error;
 };
 
+struct GraphRenderOptions {
+    bool showGrid = true;
+    bool showAxes = true;
+    int samplesPerPixel = 3;
+};
+
 class GraphRenderer {
 public:
     static constexpr const char* DEFAULT_EXPRESSION = "x^2";
@@ -63,6 +69,11 @@ public:
                              const GraphViewport& viewport,
                              const GraphFunction* functions,
                              int functionCount) const;
+    GraphRenderResult render(Display& display,
+                             const GraphViewport& viewport,
+                             const GraphFunction* functions,
+                             int functionCount,
+                             const GraphRenderOptions& options) const;
 
 private:
     struct FunctionRenderResult {
@@ -70,11 +81,14 @@ private:
         GraphErrorType error;
     };
 
-    void drawGridAndAxes(Display& display, const GraphViewport& viewport) const;
+    void drawGridAndAxes(Display& display,
+                         const GraphViewport& viewport,
+                         const GraphRenderOptions& options) const;
     FunctionRenderResult drawExpression(Display& display,
                                         const GraphViewport& viewport,
                                         const char* expression,
-                                        Color color) const;
+                                        Color color,
+                                        int samplesPerPixel) const;
     bool drawClippedLine(Display& display,
                          const GraphViewport& viewport,
                          int x0,

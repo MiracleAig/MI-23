@@ -22,6 +22,7 @@ const Color COLOR_ACTION = Display::rgb(30, 90, 140);
 const Color COLOR_FUNCTION = Display::rgb(80, 50, 100);
 const Color COLOR_TEXT = Display::WHITE;
 const Color COLOR_BORDER = Display::rgb(94, 102, 116);
+const Color COLOR_TOUCH_REGION = Display::rgb(255, 230, 95);
 
 const SimulatorButton BUTTONS[KEY_ROWS][KEY_COLS] = {
     {
@@ -107,7 +108,7 @@ Color colorForKey(Key key) {
 
 } // namespace
 
-void SimulatorKeypad::render(Display& display) const {
+void SimulatorKeypad::render(Display& display, const SettingsState* settings) const {
     display.fillRect(0,
                      SIMULATOR_KEYPAD_Y,
                      SIMULATOR_WINDOW_WIDTH,
@@ -122,6 +123,9 @@ void SimulatorKeypad::render(Display& display) const {
 
             display.fillRect(x, y, KEY_W, KEY_H, colorForKey(button.key));
             display.drawRect(x, y, KEY_W, KEY_H, COLOR_BORDER);
+            if (settings && settings->developer.showTouchRegions) {
+                display.drawRect(x + 1, y + 1, KEY_W - 2, KEY_H - 2, COLOR_TOUCH_REGION);
+            }
 
             const int labelX = x + (KEY_W - Display::textWidth(button.label)) / 2;
             const int labelY = y + (KEY_H - FONT_CHAR_HEIGHT) / 2;

@@ -15,9 +15,13 @@ add_executable(mi23
         ${CMAKE_SOURCE_DIR}/firmware/app/calculator/calculator_app.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_app.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.h
 )
 
 target_link_libraries(mi23 PRIVATE

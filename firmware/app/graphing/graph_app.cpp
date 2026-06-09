@@ -125,8 +125,10 @@ const char* textForKey(Key key) {
 
 } // namespace
 
-GraphApp::GraphApp()
-    : m_mode(GraphMode::View)
+GraphApp::GraphApp(const SettingsState* settings)
+    : m_renderer()
+    , m_settings(settings)
+    , m_mode(GraphMode::View)
     , m_needsRender(true)
     , m_editHasError(false)
     , m_editError(GraphErrorType::None)
@@ -599,12 +601,31 @@ void GraphApp::renderGraph(Display& display, int x, int y, int w, int h) {
     buildRenderFunctions(functions);
 
     const GraphViewport viewport = makeViewport(x, y, w, h, footerHeight);
+    GraphRenderOptions options{};
+    if (m_settings) {
+        options.showGrid = m_settings->graphGrid;
+        options.showAxes = m_settings->graphAxes;
+        options.samplesPerPixel = m_settings->graphSamplesPerPixel();
+    }
     const GraphRenderResult result = m_renderer.render(display,
                                                        viewport,
                                                        functions,
-                                                       FUNCTION_COUNT);
+                                                       FUNCTION_COUNT,
+                                                       options);
     if (m_mode == GraphMode::Trace) {
         renderTraceOverlay(display, viewport, x, y, w, h);
+    }
+
+    if (m_settings && m_settings->developer.showGraphBounds) {
+        char bounds[80];
+        std::snprintf(bounds,
+                      sizeof(bounds),
+                      "x[%.2g,%.2g] y[%.2g,%.2g]",
+                      m_window.xMin,
+                      m_window.xMax,
+                      m_window.yMin,
+                      m_window.yMax);
+        display.drawText(bounds, x + 8, y + 8, COLOR_TRACE);
     }
 
     char summary[96];

@@ -51,7 +51,21 @@ struct ExprResult {
     const char* error; // human-readable error message
 };
 
+enum class ExpressionAngleMode {
+    Radians,
+    Degrees,
+};
+
+struct ExpressionOptions {
+    ExpressionAngleMode angleMode = ExpressionAngleMode::Radians;
+};
+
 ExprResult evaluate(const char* expr);
 ExprResult evaluate(const char* expr, float ansValue);
+ExprResult evaluate(const char* expr, float ansValue, const ExpressionOptions& options);
 ExprResult evaluateWithX(const char* expr, float xValue);
 ExprResult evaluateWithX(const char* expr, float ansValue, float xValue);
+ExprResult evaluateWithX(const char* expr,
+                         float ansValue,
+                         float xValue,
+                         const ExpressionOptions& options);

@@ -312,3 +312,41 @@ TEST(CalculatorAppInput, FunctionCallsWithConstantsStayUncorruptedAfterClosePare
         EXPECT_EQ(app.cursorPos(), static_cast<int>(std::strlen(c.expected)));
     }
 }
+
+TEST(CalculatorAppSettings, PrecisionControlsFormattedResult) {
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    SettingsState settings;
+    settings.calculatorPrecision = 3;
+    CalculatorAppConfig config{};
+    config.settings = &settings;
+    CalculatorApp app(display, keypad, config);
+
+    app.handleKey(Key::NUM_1);
+    app.handleKey(Key::DIVIDE);
+    app.handleKey(Key::NUM_3);
+    app.handleKey(Key::ENTER);
+
+    ASSERT_EQ(app.historySize(), 1);
+    EXPECT_STREQ(app.historyAt(0).result.c_str(), "0.333");
+}
+
+TEST(CalculatorAppSettings, AngleModeDegreesAffectsTrigEvaluation) {
+    CalculatorNullDisplay display;
+    CalculatorNullKeypad keypad;
+    SettingsState settings;
+    settings.angleMode = AngleMode::Degrees;
+    settings.calculatorPrecision = 3;
+    CalculatorAppConfig config{};
+    config.settings = &settings;
+    CalculatorApp app(display, keypad, config);
+
+    app.handleKey(Key::SIN);
+    app.handleKey(Key::NUM_9);
+    app.handleKey(Key::NUM_0);
+    app.handleKey(Key::CLOSE_PAREN);
+    app.handleKey(Key::ENTER);
+
+    ASSERT_EQ(app.historySize(), 1);
+    EXPECT_STREQ(app.historyAt(0).result.c_str(), "1.000");
+}

@@ -158,7 +158,21 @@ static ExprResult evalFactorial(float value) {
     return {true, result, nullptr};
 }
 
-static ExprResult evalUnary(TokenType type, float value) {
+static float toRadians(float value, const ExpressionOptions& options) {
+    return options.angleMode == ExpressionAngleMode::Degrees
+        ? value * PI / 180.0f
+        : value;
+}
+
+static float fromRadians(float value, const ExpressionOptions& options) {
+    return options.angleMode == ExpressionAngleMode::Degrees
+        ? value * 180.0f / PI
+        : value;
+}
+
+static ExprResult evalUnary(TokenType type,
+                            float value,
+                            const ExpressionOptions& options) {
     switch (type) {
         case TokenType::OP_NEGATE:
             return {true, -value, nullptr};
@@ -168,27 +182,28 @@ static ExprResult evalUnary(TokenType type, float value) {
             }
             return {true, std::sqrt(value), nullptr};
         case TokenType::OP_SIN:
-            return {true, zeroTinyValue(std::sin(value)), nullptr};
+            return {true, zeroTinyValue(std::sin(toRadians(value, options))), nullptr};
         case TokenType::OP_COS:
-            return {true, zeroTinyValue(std::cos(value)), nullptr};
+            return {true, zeroTinyValue(std::cos(toRadians(value, options))), nullptr};
         case TokenType::OP_TAN:
-            return {true, zeroTinyValue(std::tan(value)), nullptr};
+            return {true, zeroTinyValue(std::tan(toRadians(value, options))), nullptr};
         case TokenType::OP_COT: {
-            const float sine = std::sin(value);
+            const float radians = toRadians(value, options);
+            const float sine = std::sin(radians);
             if (std::fabs(sine) < EPSILON) {
                 return {false, 0, "Cotangent domain error"};
             }
-            return {true, std::cos(value) / sine, nullptr};
+            return {true, std::cos(radians) / sine, nullptr};
         }
         case TokenType::OP_SEC: {
-            const float cosine = std::cos(value);
+            const float cosine = std::cos(toRadians(value, options));
             if (std::fabs(cosine) < EPSILON) {
                 return {false, 0, "Secant domain error"};
             }
             return {true, 1.0f / cosine, nullptr};
         }
         case TokenType::OP_CSC: {
-            const float sine = std::sin(value);
+            const float sine = std::sin(toRadians(value, options));
             if (std::fabs(sine) < EPSILON) {
                 return {false, 0, "Cosecant domain error"};
             }
@@ -198,26 +213,26 @@ static ExprResult evalUnary(TokenType type, float value) {
             if (value < -1.0f || value > 1.0f) {
                 return {false, 0, "Arcsine domain error"};
             }
-            return {true, std::asin(value), nullptr};
+            return {true, fromRadians(std::asin(value), options), nullptr};
         case TokenType::OP_ACOS:
             if (value < -1.0f || value > 1.0f) {
                 return {false, 0, "Arccosine domain error"};
             }
-            return {true, std::acos(value), nullptr};
+            return {true, fromRadians(std::acos(value), options), nullptr};
         case TokenType::OP_ATAN:
-            return {true, std::atan(value), nullptr};
+            return {true, fromRadians(std::atan(value), options), nullptr};
         case TokenType::OP_ACOT:
-            return {true, std::atan2(1.0f, value), nullptr};
+            return {true, fromRadians(std::atan2(1.0f, value), options), nullptr};
         case TokenType::OP_ASEC:
             if (std::fabs(value) < 1.0f) {
                 return {false, 0, "Arcsecant domain error"};
             }
-            return {true, std::acos(1.0f / value), nullptr};
+            return {true, fromRadians(std::acos(1.0f / value), options), nullptr};
         case TokenType::OP_ACSC:
             if (std::fabs(value) < 1.0f) {
                 return {false, 0, "Arccosecant domain error"};
             }
-            return {true, std::asin(1.0f / value), nullptr};
+            return {true, fromRadians(std::asin(1.0f / value), options), nullptr};
         case TokenType::OP_LN:
             if (value <= 0.0f) {
                 return {false, 0, "Natural log domain error"};
@@ -603,7 +618,11 @@ static int shuntingYard(const Token* infix, int infixCount, Token* postfix) {
  *         `value` field. If an error occurs, such as insufficient operands or division by zero,
  *         the `ok` field is false, and the `error` field contains a human-readable error message.
  */
-static ExprResult evalPostfix(const Token* postfix, int count, bool hasXValue, float xValue) {
+static ExprResult evalPostfix(const Token* postfix,
+                              int count,
+                              bool hasXValue,
+                              float xValue,
+                              const ExpressionOptions& options) {
     float valStack[MAX_STACK];
     int valTop = 0;
 
@@ -629,7 +648,9 @@ static ExprResult evalPostfix(const Token* postfix, int count, bool hasXValue, f
                 }
                 valStack[valTop - 1] = factorialResult.value;
             } else {
-                const ExprResult unaryResult = evalUnary(token.type, valStack[valTop - 1]);
+                const ExprResult unaryResult = evalUnary(token.type,
+                                                         valStack[valTop - 1],
+                                                         options);
                 if (!unaryResult.ok) {
                     return unaryResult;
                 }
@@ -716,7 +737,8 @@ ExprResult evaluate(const char* expr) {
 static ExprResult evaluateInternal(const char* expr,
                                    float ansValue,
                                    bool hasXValue,
-                                   float xValue) {
+                                   float xValue,
+                                   const ExpressionOptions& options) {
 
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];
@@ -728,17 +750,30 @@ static ExprResult evaluateInternal(const char* expr,
     int postfixCount = shuntingYard(infix, infixCount, postfix);
     if (postfixCount < 0) return {false, 0, "Invalid expression"};
 
-    return evalPostfix(postfix, postfixCount, hasXValue, xValue);
+    return evalPostfix(postfix, postfixCount, hasXValue, xValue, options);
 }
 
 ExprResult evaluate(const char* expr, float ansValue) {
-    return evaluateInternal(expr, ansValue, false, 0.0f);
+    return evaluateInternal(expr, ansValue, false, 0.0f, {});
+}
+
+ExprResult evaluate(const char* expr,
+                    float ansValue,
+                    const ExpressionOptions& options) {
+    return evaluateInternal(expr, ansValue, false, 0.0f, options);
 }
 
 ExprResult evaluateWithX(const char* expr, float xValue) {
-    return evaluateInternal(expr, 0.0f, true, xValue);
+    return evaluateInternal(expr, 0.0f, true, xValue, {});
 }
 
 ExprResult evaluateWithX(const char* expr, float ansValue, float xValue) {
-    return evaluateInternal(expr, ansValue, true, xValue);
+    return evaluateInternal(expr, ansValue, true, xValue, {});
+}
+
+ExprResult evaluateWithX(const char* expr,
+                         float ansValue,
+                         float xValue,
+                         const ExpressionOptions& options) {
+    return evaluateInternal(expr, ansValue, true, xValue, options);
 }

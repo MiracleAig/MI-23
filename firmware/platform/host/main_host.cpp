@@ -8,13 +8,16 @@
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
 #include "app/graphing/graph_app.h"
+#include "app/settings/settings_app.h"
+#include "app/settings/settings_state.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 
 namespace {
-CalculatorAppConfig hostCalculatorConfig() {
+CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings) {
     CalculatorAppConfig config;
     config.showOnScreenKeypad = false;
+    config.settings = &settings;
     return config;
 }
 
@@ -32,14 +35,26 @@ void renderGraphingApp(Display& display, GraphApp& graphApp) {
     graphApp.renderContent(display, 0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
 }
 
+void renderSettingsApp(Display& display, SettingsApp& settingsApp) {
+    display.clear(COLOR_BG);
+    display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
+    display.drawText("Settings", 8, 7, Display::WHITE);
+    display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
+                     COLOR_MUTED);
+    settingsApp.renderContent(0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
+}
+
 class HostAppController {
 public:
     HostAppController(DisplaySDL& display, KeypadHost& keypad)
         : m_display(display)
         , m_keypad(keypad)
+        , m_settings()
         , m_home(display)
-        , m_calculator(display, keypad, hostCalculatorConfig())
+        , m_calculator(display, keypad, hostCalculatorConfig(m_settings))
         , m_simulatorKeypad()
+        , m_graph(&m_settings)
+        , m_settingsApp(display, m_settings, "Simulator")
         , m_activeApp(AppId::Home)
     {}
 
@@ -69,6 +84,12 @@ public:
                 const int logicalY = event.button.y / 2;
                 const Key keypadKey = m_simulatorKeypad.hitTest(logicalX, logicalY);
                 if (keypadKey != Key::NONE) {
+                    if (m_settings.developer.inputEventLogs) {
+                        printf("[input] mouse x=%d y=%d key=%d\n",
+                               logicalX,
+                               logicalY,
+                               static_cast<int>(keypadKey));
+                    }
                     dispatchKey(keypadKey);
                 }
             }
@@ -94,6 +115,10 @@ public:
             m_calculator.handleKey(pressed);
         } else if (m_activeApp == AppId::Graphing) {
             m_graph.handleKey(pressed);
+        } else if (m_activeApp == AppId::Settings) {
+            if (m_settingsApp.handleKey(pressed)) {
+                goHome();
+            }
         }
     }
 
@@ -108,9 +133,12 @@ public:
         } else if (m_activeApp == AppId::Graphing) {
             m_graph.requestRender();
             renderGraphingApp(m_display, m_graph);
+        } else if (m_activeApp == AppId::Settings) {
+            m_settingsApp.requestRender();
+            renderSettingsApp(m_display, m_settingsApp);
         }
 
-        m_simulatorKeypad.render(m_display);
+        m_simulatorKeypad.render(m_display, &m_settings);
         m_display.setPresentEnabled(true);
         m_display.forcePresent();
 
@@ -120,10 +148,12 @@ public:
 private:
     DisplaySDL& m_display;
     KeypadHost& m_keypad;
+    SettingsState m_settings;
     HomeScreen m_home;
     CalculatorApp m_calculator;
     SimulatorKeypad m_simulatorKeypad;
     GraphApp m_graph;
+    SettingsApp m_settingsApp;
     AppId m_activeApp;
 
     void dispatchKey(Key key) {
@@ -138,6 +168,10 @@ private:
             m_calculator.handleKey(key);
         } else if (m_activeApp == AppId::Graphing) {
             m_graph.handleKey(key);
+        } else if (m_activeApp == AppId::Settings) {
+            if (m_settingsApp.handleKey(key)) {
+                goHome();
+            }
         }
     }
 
@@ -149,12 +183,14 @@ private:
     }
 
     void launch(AppId app) {
-        if (app == AppId::Calculator || app == AppId::Graphing) {
+        if (app == AppId::Calculator || app == AppId::Graphing || app == AppId::Settings) {
             m_activeApp = app;
             if (app == AppId::Calculator) {
                 m_calculator.requestRender();
             } else if (app == AppId::Graphing) {
                 m_graph.enter();
+            } else if (app == AppId::Settings) {
+                m_settingsApp.enter();
             }
         }
     }
