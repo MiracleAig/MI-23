@@ -180,7 +180,7 @@ static bool matchWordAt(const Context& ctx, const char* word, int length) {
 static bool matchSingleArgumentFunctionAt(const Context& ctx, int& nameLength) {
     static constexpr const char* FUNCTIONS[] = {
         "asin", "acos", "atan", "acot", "asec", "acsc",
-        "sin", "cos", "tan", "cot", "sec", "csc", "ln",
+        "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln",
     };
 
     for (const char* functionName : FUNCTIONS) {
@@ -1157,6 +1157,13 @@ static bool cursorMetricsRecursive(const Context& parseCtx,
             ? std::max(0, scaleLength(layout.boxes[indexBox].metrics.width - 2, scale))
             : 0;
         const int radicandX = x + indexWidth + radicalWidth;
+
+        if (cursorIndex > nodeTextEnd(parseCtx, radicandNode)) {
+            outMetrics = cursorAt(x + scaleLength(box.metrics.width, scale),
+                                  baselineOffset,
+                                  scale);
+            return true;
+        }
 
         if (indexBox >= 0 && cursorIndex <= nodeTextEnd(parseCtx, indexNode)) {
             const int top = baselineOffset - scaleLength(radicandMetrics.ascent, scale) - 2;

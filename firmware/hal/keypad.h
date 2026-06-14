@@ -55,6 +55,7 @@ enum class Key {
    ANS         = 0x97,
    ROOT        = 0x98,
    HOME        = 0x99,
+   DELETE_KEY  = 0x9A,
    // Custom font characters
    PI          = 0xFF,
 

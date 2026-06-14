@@ -19,6 +19,10 @@ if(PLATFORM STREQUAL "host")
             app/graphing/graph_app.h
             app/graphing/graph_renderer.cpp
             app/graphing/graph_renderer.h
+            app/settings/settings_app.cpp
+            app/settings/settings_app.h
+            app/settings/settings_state.cpp
+            app/settings/settings_state.h
             graphics/font.h
             hal/display.h
             hal/keypad.h

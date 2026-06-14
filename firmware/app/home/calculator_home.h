@@ -11,6 +11,7 @@ enum class AppId {
     Home,
     Calculator,
     Graphing,
+    Settings,
 };
 
 class HomeScreen {

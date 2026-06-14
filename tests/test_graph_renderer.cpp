@@ -3,6 +3,36 @@
 #include "app/graphing/graph_app.h"
 #include "app/graphing/graph_renderer.h"
 
+namespace {
+
+class NullDisplay : public Display {
+public:
+    void init() override {}
+    void clear(Color) override {}
+    void drawPixel(int, int, Color) override {}
+    void fillRect(int, int, int, int, Color) override {}
+    void drawText(const char*, int, int, Color) override {}
+    void present() override {}
+};
+
+class CountingDisplay : public NullDisplay {
+public:
+    int lineFillCount = 0;
+    int pixelCount = 0;
+
+    void drawPixel(int, int, Color) override {
+        pixelCount++;
+    }
+
+    void fillRect(int, int, int w, int h, Color) override {
+        if (w == 1 || h == 1) {
+            lineFillCount++;
+        }
+    }
+};
+
+} // namespace
+
 TEST(GraphViewport, ConvertsMathAndScreenCoordinates) {
     const GraphViewport viewport = {
         10,
@@ -13,6 +43,8 @@ TEST(GraphViewport, ConvertsMathAndScreenCoordinates) {
         10.0,
         -4.0,
         4.0,
+        1.0,
+        1.0,
     };
 
     EXPECT_TRUE(viewport.isValid());
@@ -37,10 +69,13 @@ TEST(GraphViewport, RejectsInvalidRangesAndSizes) {
     GraphViewport viewport = {0, 0, 1, 100, -1.0, 1.0, -1.0, 1.0};
     EXPECT_FALSE(viewport.isValid());
 
-    viewport = {0, 0, 100, 100, 1.0, 1.0, -1.0, 1.0};
+    viewport = {0, 0, 100, 100, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0};
     EXPECT_FALSE(viewport.isValid());
 
-    viewport = {0, 0, 100, 100, -1.0, 1.0, 2.0, 2.0};
+    viewport = {0, 0, 100, 100, -1.0, 1.0, 2.0, 2.0, 1.0, 1.0};
+    EXPECT_FALSE(viewport.isValid());
+
+    viewport = {0, 0, 100, 100, -1.0, 1.0, -1.0, 1.0, 0.0, 1.0};
     EXPECT_FALSE(viewport.isValid());
 }
 
@@ -57,12 +92,116 @@ TEST(GraphRenderer, EvaluatesCurrentExpressionWithX) {
     EXPECT_DOUBLE_EQ(y, 3.0);
 }
 
+TEST(GraphRenderer, EvaluatesLogAndLnWithX) {
+    GraphRenderer renderer;
+    double y = 0.0;
+    GraphErrorType error = GraphErrorType::None;
+
+    EXPECT_TRUE(renderer.evaluateExpression("log(x)", 100.0, y, &error));
+    EXPECT_NEAR(y, 2.0, 1e-5);
+    EXPECT_EQ(error, GraphErrorType::None);
+
+    EXPECT_TRUE(renderer.evaluateExpression("ln(x)", 2.71828183, y, &error));
+    EXPECT_NEAR(y, 1.0, 1e-5);
+    EXPECT_EQ(error, GraphErrorType::None);
+}
+
+TEST(GraphRenderer, ReportsLogDomainAsGraphDomainError) {
+    GraphRenderer renderer;
+    double y = 0.0;
+    GraphErrorType error = GraphErrorType::None;
+
+    EXPECT_FALSE(renderer.evaluateExpression("log(x)", 0.0, y, &error));
+    EXPECT_EQ(error, GraphErrorType::DomainError);
+
+    EXPECT_FALSE(renderer.evaluateExpression("ln(x)", -1.0, y, &error));
+    EXPECT_EQ(error, GraphErrorType::DomainError);
+}
+
 TEST(GraphRenderer, ReportsInvalidExpressionEvaluationFailure) {
     GraphRenderer renderer;
     double y = 0.0;
 
     renderer.setExpression("sin");
     EXPECT_FALSE(renderer.evaluateExpression(2.0, y));
+}
+
+TEST(GraphRenderer, RendersMultipleEnabledFunctions) {
+    NullDisplay display;
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"x^2", true, Display::WHITE},
+        {"sin(x)", true, Display::GREEN},
+        {"log(x)", true, Display::BLUE},
+    };
+
+    const GraphRenderResult result = renderer.render(display, viewport, functions, 3);
+    EXPECT_TRUE(result.drewAnyFunction);
+    EXPECT_EQ(result.error, GraphErrorType::None);
+}
+
+TEST(GraphRenderer, GridAndAxesOptionsSuppressReferenceLines) {
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"x", true, Display::WHITE},
+    };
+
+    CountingDisplay defaultDisplay;
+    GraphRenderOptions defaultOptions;
+    const GraphRenderResult defaultResult =
+        renderer.render(defaultDisplay, viewport, functions, 1, defaultOptions);
+    EXPECT_TRUE(defaultResult.drewAnyFunction);
+
+    CountingDisplay hiddenDisplay;
+    GraphRenderOptions hiddenOptions;
+    hiddenOptions.showGrid = false;
+    hiddenOptions.showAxes = false;
+    const GraphRenderResult hiddenResult =
+        renderer.render(hiddenDisplay, viewport, functions, 1, hiddenOptions);
+    EXPECT_TRUE(hiddenResult.drewAnyFunction);
+
+    EXPECT_LT(hiddenDisplay.lineFillCount, defaultDisplay.lineFillCount);
+}
+
+TEST(GraphRenderer, SamplingOptionChangesCurveDetailWork) {
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"sin(x)", true, Display::WHITE},
+    };
+
+    CountingDisplay lowDisplay;
+    GraphRenderOptions lowOptions;
+    lowOptions.showGrid = false;
+    lowOptions.showAxes = false;
+    lowOptions.samplesPerPixel = 1;
+    const GraphRenderResult lowResult =
+        renderer.render(lowDisplay, viewport, functions, 1, lowOptions);
+    EXPECT_TRUE(lowResult.drewAnyFunction);
+
+    CountingDisplay highDisplay;
+    GraphRenderOptions highOptions = lowOptions;
+    highOptions.samplesPerPixel = 5;
+    const GraphRenderResult highResult =
+        renderer.render(highDisplay, viewport, functions, 1, highOptions);
+    EXPECT_TRUE(highResult.drewAnyFunction);
+
+    EXPECT_GT(highDisplay.pixelCount, lowDisplay.pixelCount);
+}
+
+TEST(GraphRenderer, ReportsNoEnabledFunctions) {
+    NullDisplay display;
+    GraphRenderer renderer;
+    const GraphViewport viewport = {0, 0, 120, 90, -10.0, 10.0, -10.0, 10.0, 1.0, 1.0};
+    const GraphFunction functions[] = {
+        {"x^2", false, Display::WHITE},
+    };
+
+    const GraphRenderResult result = renderer.render(display, viewport, functions, 1);
+    EXPECT_FALSE(result.drewAnyFunction);
+    EXPECT_EQ(result.error, GraphErrorType::NoEnabledFunctions);
 }
 
 TEST(GraphApp, OpensEditorAndAcceptsEditedExpression) {
@@ -100,14 +239,117 @@ TEST(GraphApp, RejectsInvalidEditedExpression) {
     EXPECT_STREQ(app.expression(), "x^2");
 }
 
-TEST(GraphApp, DownKeyCanInsertXInEditor) {
+TEST(GraphApp, DownAndUpNavigateFunctionFieldsWithoutInsertingX) {
+    GraphApp app;
+
+    app.handleKey(Key::ENTER);
+    app.handleKey(Key::CURSOR_DOWN);
+
+    EXPECT_EQ(app.selectedFunction(), 1);
+    EXPECT_STREQ(app.editExpression(), "");
+
+    app.handleKey(Key::CURSOR_UP);
+    EXPECT_EQ(app.selectedFunction(), 0);
+    EXPECT_STREQ(app.editExpression(), "x^2");
+}
+
+TEST(GraphApp, XKeyInsertsXInEditor) {
     GraphApp app;
 
     app.handleKey(Key::ENTER);
     app.handleKey(Key::CLEAR);
     app.handleKey(Key::CLEAR);
     app.handleKey(Key::CLEAR);
-    app.handleKey(Key::CURSOR_DOWN);
+    app.handleKey(Key::X_VAR);
 
     EXPECT_STREQ(app.editExpression(), "x");
+}
+
+TEST(GraphApp, CursorInsertionBackspaceAndDeleteEditAtCursor) {
+    GraphApp app;
+
+    app.handleKey(Key::ENTER);
+    app.handleKey(Key::CLEAR);
+    app.handleKey(Key::CLEAR);
+    app.handleKey(Key::CLEAR);
+    app.handleKey(Key::X_VAR);
+    app.handleKey(Key::PLUS);
+    app.handleKey(Key::NUM_1);
+    app.handleKey(Key::CURSOR_LEFT);
+    app.handleKey(Key::NUM_2);
+    EXPECT_STREQ(app.editExpression(), "x+21");
+    EXPECT_EQ(app.editCursor(), 3);
+
+    app.handleKey(Key::CLEAR);
+    EXPECT_STREQ(app.editExpression(), "x+1");
+    EXPECT_EQ(app.editCursor(), 2);
+
+    app.handleKey(Key::DELETE_KEY);
+    EXPECT_STREQ(app.editExpression(), "x+");
+}
+
+TEST(GraphApp, SupportsMultipleFunctionsThroughEditorSelection) {
+    GraphApp app;
+
+    app.handleKey(Key::ENTER);
+    app.handleKey(Key::CURSOR_DOWN);
+    EXPECT_EQ(app.selectedFunction(), 1);
+    app.handleKey(Key::SIN);
+    app.handleKey(Key::X_VAR);
+    app.handleKey(Key::CLOSE_PAREN);
+    app.handleKey(Key::ENTER);
+
+    EXPECT_EQ(app.mode(), GraphMode::View);
+    EXPECT_TRUE(app.functionEnabled(0));
+    EXPECT_TRUE(app.functionEnabled(1));
+    EXPECT_STREQ(app.functionExpression(1), "sin(x)");
+}
+
+TEST(GraphApp, FunctionCanBeDisabledWithoutDeletingExpression) {
+    GraphApp app;
+
+    app.handleKey(Key::ENTER);
+    app.handleKey(Key::NEGATE);
+    app.handleKey(Key::ENTER);
+
+    EXPECT_FALSE(app.functionEnabled(0));
+    EXPECT_STREQ(app.functionExpression(0), "x^2");
+}
+
+TEST(GraphApp, ZoomPreservesCenterAndResetRestoresDefaultWindow) {
+    GraphApp app;
+    const GraphWindow before = app.window();
+
+    app.handleKey(Key::PLUS);
+    const GraphWindow zoomed = app.window();
+    EXPECT_DOUBLE_EQ((before.xMin + before.xMax) * 0.5,
+                     (zoomed.xMin + zoomed.xMax) * 0.5);
+    EXPECT_DOUBLE_EQ((before.yMin + before.yMax) * 0.5,
+                     (zoomed.yMin + zoomed.yMax) * 0.5);
+    EXPECT_LT(zoomed.xMax - zoomed.xMin, before.xMax - before.xMin);
+    EXPECT_LT(zoomed.xScale, before.xScale);
+
+    app.handleKey(Key::MINUS);
+    const GraphWindow zoomedOut = app.window();
+    EXPECT_DOUBLE_EQ(zoomedOut.xMin, before.xMin);
+    EXPECT_DOUBLE_EQ(zoomedOut.xMax, before.xMax);
+    EXPECT_DOUBLE_EQ(zoomedOut.yMin, before.yMin);
+    EXPECT_DOUBLE_EQ(zoomedOut.yMax, before.yMax);
+    EXPECT_DOUBLE_EQ(zoomedOut.xScale, before.xScale);
+
+    app.handleKey(Key::CLEAR);
+    EXPECT_DOUBLE_EQ(app.window().xMin, -10.0);
+    EXPECT_DOUBLE_EQ(app.window().xMax, 10.0);
+    EXPECT_DOUBLE_EQ(app.window().yMin, -10.0);
+    EXPECT_DOUBLE_EQ(app.window().yMax, 10.0);
+}
+
+TEST(GraphApp, TraceModeMovesAlongEnabledFunction) {
+    GraphApp app;
+
+    app.handleKey(Key::CURSOR_RIGHT);
+    EXPECT_EQ(app.mode(), GraphMode::Trace);
+
+    app.handleKey(Key::CURSOR_RIGHT);
+    EXPECT_EQ(app.mode(), GraphMode::Trace);
 }

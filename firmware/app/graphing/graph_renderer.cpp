@@ -3,19 +3,22 @@
 #include "math/expression.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace {
 
 const Color GRAPH_BG = Display::rgb(4, 7, 10);
 const Color GRAPH_BORDER = Display::rgb(108, 118, 132);
+const Color GRAPH_GRID = Display::rgb(32, 42, 52);
 const Color GRAPH_AXIS = Display::rgb(185, 195, 205);
 const Color GRAPH_TICK = Display::rgb(130, 144, 158);
 const Color GRAPH_CURVE = Display::rgb(255, 230, 95);
 const Color GRAPH_ERROR = Display::rgb(255, 110, 110);
 
 constexpr int TICK_HALF_LENGTH = 3;
-constexpr int MAX_TICKS_PER_AXIS = 64;
+constexpr int MAX_GRID_LINES_PER_AXIS = 80;
 constexpr int OFFSCREEN_MARGIN_MULTIPLIER = 4;
+constexpr double MAX_REASONABLE_Y = 1.0e6;
 
 int roundToInt(double value) {
     return static_cast<int>(std::lround(value));
@@ -58,17 +61,54 @@ int clipCode(int x, int y, int left, int top, int right, int bottom) {
     return code;
 }
 
+GraphErrorType classifyExpressionError(const ExprResult& result) {
+    if (result.ok) {
+        return GraphErrorType::None;
+    }
+    if (!result.error) {
+        return GraphErrorType::InvalidExpression;
+    }
+    if (std::strcmp(result.error, "Empty expression") == 0) {
+        return GraphErrorType::EmptyFunction;
+    }
+    if (std::strcmp(result.error, "Division by zero") == 0) {
+        return GraphErrorType::DivideByZero;
+    }
+    if (std::strstr(result.error, "domain error") != nullptr ||
+        std::strstr(result.error, "Domain error") != nullptr) {
+        return GraphErrorType::DomainError;
+    }
+    return GraphErrorType::InvalidExpression;
+}
+
 } // namespace
+
+const char* graphErrorText(GraphErrorType error) {
+    switch (error) {
+        case GraphErrorType::None: return "";
+        case GraphErrorType::EmptyFunction: return "Empty function";
+        case GraphErrorType::InvalidExpression: return "Invalid expression";
+        case GraphErrorType::DomainError: return "Domain error";
+        case GraphErrorType::DivideByZero: return "Divide by zero";
+        case GraphErrorType::NoEnabledFunctions: return "No enabled functions";
+        case GraphErrorType::NoValidPoints: return "No valid points";
+        default: return "Graph error";
+    }
+}
 
 bool GraphViewport::isValid() const {
     return screenWidth > 1 &&
            screenHeight > 1 &&
            xMin < xMax &&
            yMin < yMax &&
+           xScale > 0.0 &&
+           yScale > 0.0 &&
            isFinite(xMin) &&
            isFinite(xMax) &&
            isFinite(yMin) &&
-           isFinite(yMax);
+           isFinite(yMax) &&
+           isFinite(xScale) &&
+           isFinite(yScale);
 }
 
 int GraphViewport::mathToScreenX(double x) const {
@@ -112,17 +152,60 @@ void GraphRenderer::setExpression(const char* expression) {
 }
 
 bool GraphRenderer::evaluateExpression(double x, double& y) const {
-    const ExprResult result = evaluateWithX(m_expression, static_cast<float>(x));
+    return evaluateExpression(m_expression, x, y);
+}
+
+bool GraphRenderer::evaluateExpression(const char* expression,
+                                       double x,
+                                       double& y,
+                                       GraphErrorType* error) const {
+    if (error) {
+        *error = GraphErrorType::None;
+    }
+    if (!expression || expression[0] == '\0') {
+        if (error) {
+            *error = GraphErrorType::EmptyFunction;
+        }
+        return false;
+    }
+
+    const ExprResult result = evaluateWithX(expression, static_cast<float>(x));
     if (!result.ok || !isFinite(result.value)) {
+        if (error) {
+            *error = classifyExpressionError(result);
+        }
         return false;
     }
     y = static_cast<double>(result.value);
-    return isFinite(y);
+    if (!isFinite(y) || std::fabs(y) > MAX_REASONABLE_Y) {
+        if (error) {
+            *error = GraphErrorType::DomainError;
+        }
+        return false;
+    }
+    return true;
 }
 
-void GraphRenderer::render(Display& display, const GraphViewport& viewport) const {
+GraphRenderResult GraphRenderer::render(Display& display,
+                                        const GraphViewport& viewport) const {
+    const GraphFunction function = {m_expression, true, GRAPH_CURVE};
+    return render(display, viewport, &function, 1, {});
+}
+
+GraphRenderResult GraphRenderer::render(Display& display,
+                                        const GraphViewport& viewport,
+                                        const GraphFunction* functions,
+                                        int functionCount) const {
+    return render(display, viewport, functions, functionCount, {});
+}
+
+GraphRenderResult GraphRenderer::render(Display& display,
+                                        const GraphViewport& viewport,
+                                        const GraphFunction* functions,
+                                        int functionCount,
+                                        const GraphRenderOptions& options) const {
     if (!viewport.isValid()) {
-        return;
+        return {false, GraphErrorType::InvalidExpression};
     }
 
     display.fillRect(viewport.screenX,
@@ -136,19 +219,97 @@ void GraphRenderer::render(Display& display, const GraphViewport& viewport) cons
                      viewport.screenHeight,
                      GRAPH_BORDER);
 
-    drawAxes(display, viewport);
-    if (!drawExpression(display, viewport)) {
-        display.drawText("Graph error",
+    drawGridAndAxes(display, viewport, options);
+
+    bool enabledAnyFunction = false;
+    bool drewAnyFunction = false;
+    GraphErrorType firstError = GraphErrorType::None;
+
+    for (int i = 0; functions && i < functionCount; ++i) {
+        if (!functions[i].enabled) {
+            continue;
+        }
+        enabledAnyFunction = true;
+        const FunctionRenderResult result = drawExpression(display,
+                                                           viewport,
+                                                           functions[i].expression,
+                                                           functions[i].color,
+                                                           options.samplesPerPixel);
+        if (result.hasAnyValidPoint) {
+            drewAnyFunction = true;
+        } else if (firstError == GraphErrorType::None && result.error != GraphErrorType::None) {
+            firstError = result.error;
+        }
+    }
+
+    if (!enabledAnyFunction) {
+        display.drawText(graphErrorText(GraphErrorType::NoEnabledFunctions),
                          viewport.screenX + 4,
                          viewport.screenY + 4,
                          GRAPH_ERROR);
+        return {false, GraphErrorType::NoEnabledFunctions};
     }
+
+    if (!drewAnyFunction) {
+        const GraphErrorType error = firstError == GraphErrorType::None
+            ? GraphErrorType::NoValidPoints
+            : firstError;
+        display.drawText(graphErrorText(error),
+                         viewport.screenX + 4,
+                         viewport.screenY + 4,
+                         GRAPH_ERROR);
+        return {false, error};
+    }
+
+    return {true, GraphErrorType::None};
 }
 
-void GraphRenderer::drawAxes(Display& display, const GraphViewport& viewport) const {
+void GraphRenderer::drawGridAndAxes(Display& display,
+                                    const GraphViewport& viewport,
+                                    const GraphRenderOptions& options) const {
     const bool hasXAxis = viewport.yMin <= 0.0 && viewport.yMax >= 0.0;
     const bool hasYAxis = viewport.xMin <= 0.0 && viewport.xMax >= 0.0;
 
+    const double firstXGrid = std::ceil(viewport.xMin / viewport.xScale) * viewport.xScale;
+    const double firstYGrid = std::ceil(viewport.yMin / viewport.yScale) * viewport.yScale;
+
+    if (options.showGrid) {
+        int gridCount = 0;
+        for (double value = firstXGrid;
+             value <= viewport.xMax + viewport.xScale * 0.5 &&
+             gridCount < MAX_GRID_LINES_PER_AXIS;
+             value += viewport.xScale, ++gridCount) {
+            if (std::fabs(value) < 1e-9) {
+                continue;
+            }
+            const int px = viewport.mathToScreenX(value);
+            display.drawVerticalLine(px,
+                                     viewport.screenY,
+                                     viewport.screenHeight,
+                                     GRAPH_GRID);
+        }
+
+        gridCount = 0;
+        for (double value = firstYGrid;
+             value <= viewport.yMax + viewport.yScale * 0.5 &&
+             gridCount < MAX_GRID_LINES_PER_AXIS;
+             value += viewport.yScale, ++gridCount) {
+            if (std::fabs(value) < 1e-9) {
+                continue;
+            }
+            const int py = viewport.mathToScreenY(value);
+            display.drawHorizontalLine(viewport.screenX,
+                                       py,
+                                       viewport.screenWidth,
+                                       GRAPH_GRID);
+        }
+    }
+
+    if (!options.showAxes) {
+        return;
+    }
+
+    int gridCount = 0;
     int axisY = viewport.screenY + viewport.screenHeight - 1;
     if (hasXAxis) {
         axisY = viewport.mathToScreenY(0.0);
@@ -167,16 +328,15 @@ void GraphRenderer::drawAxes(Display& display, const GraphViewport& viewport) co
                                  GRAPH_AXIS);
     }
 
-    const int firstXTick = static_cast<int>(std::ceil(viewport.xMin));
-    const int lastXTick = static_cast<int>(std::floor(viewport.xMax));
-    int tickCount = 0;
-    for (int tick = firstXTick;
-         tick <= lastXTick && tickCount < MAX_TICKS_PER_AXIS;
-         tick++, tickCount++) {
-        if (tick == 0) {
+    gridCount = 0;
+    for (double tick = firstXGrid;
+         tick <= viewport.xMax + viewport.xScale * 0.5 &&
+         gridCount < MAX_GRID_LINES_PER_AXIS;
+         tick += viewport.xScale, ++gridCount) {
+        if (std::fabs(tick) < 1e-9) {
             continue;
         }
-        const int px = viewport.mathToScreenX(static_cast<double>(tick));
+        const int px = viewport.mathToScreenX(tick);
         const int tickTop = clampInt(axisY - TICK_HALF_LENGTH,
                                      viewport.screenY,
                                      viewport.screenY + viewport.screenHeight - 1);
@@ -186,16 +346,15 @@ void GraphRenderer::drawAxes(Display& display, const GraphViewport& viewport) co
         display.drawVerticalLine(px, tickTop, tickBottom - tickTop + 1, GRAPH_TICK);
     }
 
-    const int firstYTick = static_cast<int>(std::ceil(viewport.yMin));
-    const int lastYTick = static_cast<int>(std::floor(viewport.yMax));
-    tickCount = 0;
-    for (int tick = firstYTick;
-         tick <= lastYTick && tickCount < MAX_TICKS_PER_AXIS;
-         tick++, tickCount++) {
-        if (tick == 0) {
+    gridCount = 0;
+    for (double tick = firstYGrid;
+         tick <= viewport.yMax + viewport.yScale * 0.5 &&
+         gridCount < MAX_GRID_LINES_PER_AXIS;
+         tick += viewport.yScale, ++gridCount) {
+        if (std::fabs(tick) < 1e-9) {
             continue;
         }
-        const int py = viewport.mathToScreenY(static_cast<double>(tick));
+        const int py = viewport.mathToScreenY(tick);
         const int tickLeft = clampInt(axisX - TICK_HALF_LENGTH,
                                       viewport.screenX,
                                       viewport.screenX + viewport.screenWidth - 1);
@@ -206,24 +365,40 @@ void GraphRenderer::drawAxes(Display& display, const GraphViewport& viewport) co
     }
 }
 
-bool GraphRenderer::drawExpression(Display& display, const GraphViewport& viewport) const {
+GraphRenderer::FunctionRenderResult GraphRenderer::drawExpression(Display& display,
+                                                                  const GraphViewport& viewport,
+                                                                  const char* expression,
+                                                                  Color color,
+                                                                  int samplesPerPixel) const {
     bool hasPrevious = false;
     int previousX = 0;
     int previousY = 0;
+    double previousMathY = 0.0;
     bool previousVisible = false;
     bool hasAnyValidPoint = false;
+    GraphErrorType firstError = GraphErrorType::None;
 
     const int offscreenTop = viewport.screenY -
                              viewport.screenHeight * OFFSCREEN_MARGIN_MULTIPLIER;
     const int offscreenBottom = viewport.screenY + viewport.screenHeight - 1 +
                                 viewport.screenHeight * OFFSCREEN_MARGIN_MULTIPLIER;
+    const int sampleMultiplier = samplesPerPixel <= 0 ? 3 : samplesPerPixel;
+    const int sampleCount = viewport.screenWidth > 0
+        ? viewport.screenWidth * sampleMultiplier
+        : 0;
+    const int maxJumpPixels = viewport.screenHeight + viewport.screenHeight / 2;
+    const double maxJumpMath = (viewport.yMax - viewport.yMin) * 1.5;
 
-    for (int px = viewport.screenX;
-         px < viewport.screenX + viewport.screenWidth;
-         px++) {
-        const double x = viewport.screenToMathX(px);
+    for (int sample = 0; sample <= sampleCount; ++sample) {
+        const double t = static_cast<double>(sample) / static_cast<double>(sampleCount);
+        const double x = viewport.xMin + t * (viewport.xMax - viewport.xMin);
+        const int px = viewport.mathToScreenX(x);
         double y = 0.0;
-        if (!evaluateExpression(x, y)) {
+        GraphErrorType error = GraphErrorType::None;
+        if (!evaluateExpression(expression, x, y, &error)) {
+            if (firstError == GraphErrorType::None && error != GraphErrorType::None) {
+                firstError = error;
+            }
             hasPrevious = false;
             continue;
         }
@@ -236,21 +411,26 @@ bool GraphRenderer::drawExpression(Display& display, const GraphViewport& viewpo
 
         hasAnyValidPoint = true;
         const bool visible = viewport.containsScreenPoint(px, py);
+        const bool continuousFromPrevious =
+            hasPrevious &&
+            std::abs(py - previousY) <= maxJumpPixels &&
+            std::fabs(y - previousMathY) <= maxJumpMath;
 
-        if (hasPrevious && (previousVisible || visible)) {
+        if (continuousFromPrevious && (previousVisible || visible)) {
             drawClippedLine(display, viewport,
                             previousX, previousY,
                             px, py,
-                            GRAPH_CURVE);
+                            color);
         }
 
         previousX = px;
         previousY = py;
+        previousMathY = y;
         previousVisible = visible;
         hasPrevious = true;
     }
 
-    return hasAnyValidPoint;
+    return {hasAnyValidPoint, firstError};
 }
 
 bool GraphRenderer::drawClippedLine(Display& display,

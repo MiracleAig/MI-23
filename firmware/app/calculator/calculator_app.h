@@ -5,6 +5,7 @@
 #pragma once
 
 #include "history.h"
+#include "app/settings/settings_state.h"
 #include "hal/display.h"
 #include "hal/keypad.h"
 #include "math/math_typeset.h"
@@ -15,7 +16,7 @@ static constexpr int ROW_HEIGHT   = 20;
 static constexpr int HISTORY_TOP  = 4;
 static constexpr int HISTORY_BOTTOM_WITH_KEYPAD = 100;
 
-static const uint16_t COLOR_HISTORY_BG   = Display::rgb(10, 10, 18);
+static const uint16_t COLOR_HISTORY_BG   = Display::BLACK;
 static const uint16_t COLOR_SEPARATOR    = Display::rgb(70, 70, 90);
 static const uint16_t COLOR_SCROLLBAR_BG = Display::rgb(40, 40, 50);
 
@@ -36,6 +37,7 @@ struct Button {
 struct CalculatorAppConfig {
     bool showOnScreenKeypad = false;
     int uiScale = 1;
+    const SettingsState* settings = nullptr;
 };
 
 class CalculatorApp {
@@ -54,6 +56,8 @@ public:
     void requestRender();
     const char* input() const { return m_inputBuffer; }
     int cursorPos() const { return m_cursorPos; }
+    int historySize() const;
+    const HistoryEntry& historyAt(int index) const;
 
 private:
     Display& m_display;
@@ -95,8 +99,8 @@ private:
                     bool usedMathLayout);
     void drawScrollbar(int maxScroll, int viewportHeight);
     void drawButtonGrid();
-    int historySize() const;
-    const HistoryEntry& historyAt(int index) const;
+    int currentUiScale() const;
+    int currentPrecision() const;
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {

@@ -11,6 +11,7 @@ namespace {
 enum class HomeIcon {
     Calculator,
     Graphing,
+    Settings,
 };
 
 struct HomeAppDefinition {
@@ -22,6 +23,7 @@ struct HomeAppDefinition {
 constexpr HomeAppDefinition HOME_APPS[] = {
     { AppId::Calculator, "Calculator", HomeIcon::Calculator },
     { AppId::Graphing,   "Graphing",   HomeIcon::Graphing   },
+    { AppId::Settings,   "Settings",   HomeIcon::Settings   },
 };
 
 constexpr int APP_COUNT = static_cast<int>(sizeof(HOME_APPS) / sizeof(HOME_APPS[0]));
@@ -102,6 +104,16 @@ void drawGraphingIcon(Display& display, int x, int y, uint16_t color) {
     display.fillRect(x + 27, y + 12, 3, 3, color);
 }
 
+void drawSettingsIcon(Display& display, int x, int y, uint16_t color) {
+    drawOutline(display, x + 4, y, 30, 30, color, 2);
+    display.fillRect(x + 10, y + 7, 18, 2, color);
+    display.fillRect(x + 10, y + 14, 18, 2, color);
+    display.fillRect(x + 10, y + 21, 18, 2, color);
+    display.fillRect(x + 14, y + 5, 4, 6, color);
+    display.fillRect(x + 23, y + 12, 4, 6, color);
+    display.fillRect(x + 17, y + 19, 4, 6, color);
+}
+
 void drawIcon(Display& display,
               const HomeAppDefinition& app,
               int centerX,
@@ -109,8 +121,10 @@ void drawIcon(Display& display,
               uint16_t color) {
     if (app.icon == HomeIcon::Calculator) {
         drawCalculatorIcon(display, centerX - 17, topY, color);
-    } else {
+    } else if (app.icon == HomeIcon::Graphing) {
         drawGraphingIcon(display, centerX - 19, topY, color);
+    } else {
+        drawSettingsIcon(display, centerX - 19, topY, color);
     }
 }
 

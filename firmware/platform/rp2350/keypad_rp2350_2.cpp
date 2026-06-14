@@ -97,7 +97,7 @@ Key KeypadRP2350_2::mapKey(int row, int col) {
         { Key::CURSOR_LEFT, Key::CURSOR_RIGHT, Key::CURSOR_UP,   Key::CURSOR_DOWN },
         { Key::OPEN_PAREN,  Key::CLOSE_PAREN,  Key::POWER,       Key::SQRT        },
         { Key::MULTIPLY,    Key::DIVIDE,        Key::PERCENT,     Key::NEGATE      },
-        { Key::SIN,         Key::COS,           Key::TAN,         Key::PI          },
+        { Key::SIN,         Key::COS,           Key::TAN,         Key::X_VAR       },
     };
     // clang-format on
     return TABLE[row][col];
