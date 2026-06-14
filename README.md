@@ -121,6 +121,78 @@ Major software areas:
 | Platform | SDL simulator and RP2350 implementations |
 
 ---
+# Getting Started
+## Useful Resources
+
+### Development Tools
+
+* [Git](https://git-scm.com/)
+* [CMake](https://cmake.org/)
+* [SDL2](https://www.libsdl.org/)
+* [Google Test](https://github.com/google/googletest)
+
+### RP2350 Development
+
+* [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk)
+* [RP2350 Documentation](https://www.raspberrypi.com/documentation/microcontrollers/)
+* [Pico Examples](https://github.com/raspberrypi/pico-examples)
+
+### Recommended Development Environments
+
+* [CLion](https://www.jetbrains.com/clion/) **recommended**
+* [Visual Studio Code](https://code.visualstudio.com/)
+* [Visual Studio](https://visualstudio.microsoft.com/)
+* [Qt Creator](https://www.qt.io/product/development-tools)
+
+### Platform Setup
+
+#### Fedora Linux
+
+```bash
+sudo dnf install git cmake gcc-c++ SDL2-devel gtest-devel make
+```
+
+#### Ubuntu / Debian Linux
+
+```bash
+sudo apt update
+sudo apt install git cmake g++ libsdl2-dev libgtest-dev make
+```
+
+#### Arch Linux
+
+```bash
+sudo pacman -S --needed git cmake gcc sdl2 gtest make
+```
+
+#### macOS
+
+```bash
+brew install git cmake sdl2 googletest
+```
+
+#### Windows (MSYS2)
+
+1. Install [MSYS2](https://www.msys2.org/)
+2. Open the **MSYS2 MinGW 64-bit** shell
+3. Run:
+
+```bash
+pacman -Syu
+```
+
+4. Then install the required packages:
+
+```bash
+pacman -S --needed \
+  mingw-w64-x86_64-gcc \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-SDL2 \
+  mingw-w64-x86_64-gtest \
+  mingw-w64-x86_64-make \
+  git
+```
+
 
 ## Repository Structure
 
@@ -129,7 +201,7 @@ firmware/
 ├── app/
 │   ├── calculator/          # Standard calculator mode
 │   ├── graphing/            # Graphing app
-│   └── settings/            # Settings app, if enabled in the current branch
+│   └── settings/            # Settings app
 ├── drivers/
 │   └── st7789/              # Custom ST7789 display driver
 ├── graphics/                # Rendering utilities and primitives
