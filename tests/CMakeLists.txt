@@ -7,18 +7,26 @@ include(GoogleTest)
 enable_testing()
 
 add_executable(mi23_tests
+        test_boot_manager.cpp
         test_calculator_app.cpp
         test_display_primitives.cpp
         test_expression.cpp
         test_graph_renderer.cpp
+        test_home_screen.cpp
         test_math_typeset.cpp
         test_settings_app.cpp
+        test_settings_store.cpp
         ../firmware/app/calculator/calculator_app.cpp
+        ../firmware/app/boot/boot_manager.cpp
         ../firmware/app/graphing/graph_app.cpp
         ../firmware/app/graphing/graph_renderer.cpp
+        ../firmware/app/home/calculator_home.cpp
         ../firmware/app/settings/settings_app.cpp
         ../firmware/app/settings/settings_state.cpp
+        ../firmware/hal/settings_store.cpp
         ../firmware/platform/host/simulator_keypad.cpp
+        ../firmware/platform/host/settings_store_host.cpp
+        ../firmware/platform/host/startup_host.cpp
 )
 
 target_include_directories(mi23_tests

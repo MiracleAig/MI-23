@@ -7,7 +7,6 @@
 #include "math/math_typeset.h"
 #include "graphics/font.h"
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -333,6 +332,8 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
     , m_injectedKey(Key::NONE)
     , m_config(config)
     , m_needsRender(true)
+    , m_lastBlinkPhase(-1)
+    , m_cursorVisible(true)
 {}
 
 void CalculatorApp::init() {
@@ -367,6 +368,10 @@ void CalculatorApp::update() {
 }
 
 void CalculatorApp::handleKey(Key pressed) {
+    const DisplayRect oldInputRect = inputRowRect();
+    const int oldHistoryScroll = m_historyScroll;
+    const int oldHistoryCount = m_historyCount;
+
     if (pressed != Key::NONE) {
         if (m_config.settings && m_config.settings->developer.inputEventLogs) {
             printf("[input] calculator key=%d before='%s' cursor=%d\n",
@@ -381,9 +386,18 @@ void CalculatorApp::handleKey(Key pressed) {
                    m_inputBuffer,
                    m_cursorPos);
         }
-        m_needsRender = true;
     }
     clampScroll();
+
+    if (pressed != Key::NONE) {
+        invalidateRect(oldInputRect);
+        invalidateRect(inputRowRect());
+        if (oldHistoryScroll != m_historyScroll || oldHistoryCount != m_historyCount ||
+            pressed == Key::ENTER) {
+            invalidateRect(historyRect());
+        }
+        m_needsRender = true;
+    }
 }
 
 void CalculatorApp::handlePointerDown(int logicalX, int logicalY) {
@@ -398,8 +412,12 @@ void CalculatorApp::handlePointerDown(int logicalX, int logicalY) {
 }
 
 void CalculatorApp::scrollHistory(int delta) {
+    const DisplayRect oldInputRect = inputRowRect();
     m_historyScroll += delta;
     clampScroll();
+    invalidateRect(historyRect());
+    invalidateRect(oldInputRect);
+    invalidateRect(inputRowRect());
     m_needsRender = true;
 }
 
@@ -556,19 +574,54 @@ void CalculatorApp::render() {
     if (!m_needsRender) {
         return;
     }
-    m_display.clear(Display::BLACK);
-    m_display.fillRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
-                       COLOR_HISTORY_BG);
-    drawHistory();
-    drawInputRow();
-    if (m_config.showOnScreenKeypad) {
-        drawButtonGrid();
+
+    if (m_dirtyRegions.empty()) {
+        invalidateFullScreen();
     }
+
+    for (int i = 0; i < m_dirtyRegions.count(); ++i) {
+        m_display.setClipRect(m_dirtyRegions.rect(i));
+        m_display.clear(Display::BLACK);
+        m_display.fillRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
+                           COLOR_HISTORY_BG);
+        drawHistory();
+        drawInputRow();
+        if (m_config.showOnScreenKeypad) {
+            drawButtonGrid();
+        }
+    }
+    m_display.clearClipRect();
     m_display.present();
+    m_dirtyRegions.clear();
     m_needsRender = false;
 }
 
+bool CalculatorApp::updateBlink(uint64_t nowMs) {
+    const int phase = static_cast<int>((nowMs / 500ULL) % 2ULL);
+    if (phase == m_lastBlinkPhase) {
+        return false;
+    }
+
+    m_lastBlinkPhase = phase;
+    m_cursorVisible = phase == 0;
+    requestInputRender();
+
+    if (m_config.settings && m_config.settings->developer.inputEventLogs) {
+        printf("[render] calculator blink phase=%d cursorVisible=%d redraw=1\n",
+               phase,
+               m_cursorVisible ? 1 : 0);
+    }
+    return true;
+}
+
 void CalculatorApp::requestRender() {
+    invalidateFullScreen();
+    m_needsRender = true;
+}
+
+void CalculatorApp::requestInputRender() {
+    invalidateRect(cursorRect());
+    invalidateRect(cursorDebugRect());
     m_needsRender = true;
 }
 
@@ -761,10 +814,7 @@ void CalculatorApp::drawCursor(int originX,
                                int baselineY,
                                float expressionScale,
                                bool usedMathLayout) {
-    const auto now = std::chrono::steady_clock::now().time_since_epoch();
-    const auto blinkMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    bool showCursor = ((blinkMs / 500) % 2) == 0;
-    if (!showCursor) return;
+    if (!m_cursorVisible) return;
 
     math_typeset::CursorMetrics cursorMetrics{};
     const bool hasCursorMetrics = usedMathLayout &&
@@ -889,4 +939,85 @@ int CalculatorApp::currentPrecision() const {
     return m_config.settings
         ? m_config.settings->calculatorPrecision
         : 6;
+}
+
+DisplayRect CalculatorApp::historyRect() const {
+    return {0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight};
+}
+
+DisplayRect CalculatorApp::inputRowRect() const {
+    const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
+                                                                    m_historyHeight,
+                                                                    currentUiScale());
+    const int inputY = HISTORY_TOP
+        + visibleHistoryHeight(historySize(),
+                               [this](int i) -> const HistoryEntry& { return historyAt(i); },
+                               m_historyScroll,
+                               historyViewportHeight,
+                               currentUiScale());
+    return {0, inputY, DISPLAY_WIDTH, inputEntryHeight(m_inputBuffer, currentUiScale())};
+}
+
+DisplayRect CalculatorApp::keypadRect() const {
+    return {0, BTN_AREA_TOP, DISPLAY_WIDTH, DISPLAY_HEIGHT - BTN_AREA_TOP};
+}
+
+DisplayRect CalculatorApp::cursorDebugRect() const {
+    if (!(m_config.settings && m_config.settings->developer.showCursorPosition)) {
+        return {0, 0, 0, 0};
+    }
+    return {MARGIN, DISPLAY_HEIGHT - FONT_CHAR_HEIGHT - 1,
+            DISPLAY_WIDTH - MARGIN * 2, FONT_CHAR_HEIGHT + 1};
+}
+
+DisplayRect CalculatorApp::cursorRect() {
+    const DisplayRect inputRect = inputRowRect();
+    math_typeset::LayoutMetrics metrics = m_cachedInputMetrics;
+    const bool measuredMath = ensureInputLayout();
+    metrics = m_cachedInputMetrics;
+
+    const int uiScale = normalizedScale(currentUiScale());
+    const float expressionScale = static_cast<float>(uiScale);
+    const int baselineY = measuredMath
+        ? baselineForEntry(inputRect.y, metrics, expressionScale)
+        : inputRect.y + math_typeset::scaleLength(FONT_CHAR_HEIGHT - 1, expressionScale);
+
+    math_typeset::CursorMetrics cursorMetrics{};
+    const bool hasCursorMetrics = measuredMath &&
+        math_typeset::cursorMetrics(m_inputBuffer,
+                                    m_cursorPos,
+                                    expressionScale,
+                                    cursorMetrics);
+
+    int cursorX = MARGIN - m_inputViewportX;
+    const int defaultCursorAscent =
+        math_typeset::scaleLength(FONT_CHAR_HEIGHT - 1, expressionScale);
+    const int defaultCursorDescent = math_typeset::scaleLength(1, expressionScale);
+    int cursorTop = baselineY - defaultCursorAscent;
+    int cursorHeight = std::max(2, defaultCursorAscent + defaultCursorDescent);
+
+    if (hasCursorMetrics) {
+        cursorX += cursorMetrics.x;
+        cursorTop = baselineY + cursorMetrics.baselineOffset - cursorMetrics.ascent;
+        cursorHeight = std::max(2, cursorMetrics.ascent + cursorMetrics.descent);
+    } else {
+        const int prefixWidth = math_typeset::measurePrefixWidth(m_inputBuffer, m_cursorPos);
+        cursorX += math_typeset::scaleLength(prefixWidth, expressionScale);
+    }
+
+    const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
+    cursorTop = std::max(0, cursorTop);
+    cursorHeight = std::min(cursorHeight, DISPLAY_HEIGHT - cursorTop);
+    return {cursorX, cursorTop, cursorWidth, cursorHeight};
+}
+
+void CalculatorApp::invalidateRect(DisplayRect rect) {
+    m_dirtyRegions.add(rect);
+}
+
+void CalculatorApp::invalidateFullScreen() {
+    invalidateRect({0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+    if (m_config.showOnScreenKeypad) {
+        invalidateRect(keypadRect());
+    }
 }

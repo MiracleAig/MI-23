@@ -10,6 +10,7 @@
 #include "hal/keypad.h"
 #include "math/math_typeset.h"
 #include <array>
+#include <cstdint>
 
 static constexpr int MARGIN       = 5;
 static constexpr int ROW_HEIGHT   = 20;
@@ -53,7 +54,9 @@ public:
     void handlePointerDown(int logicalX, int logicalY);
     void scrollHistory(int delta);
     void render();
+    bool updateBlink(uint64_t nowMs);
     void requestRender();
+    void requestInputRender();
     const char* input() const { return m_inputBuffer; }
     int cursorPos() const { return m_cursorPos; }
     int historySize() const;
@@ -86,6 +89,9 @@ private:
     Key m_injectedKey;
     CalculatorAppConfig m_config;
     bool m_needsRender;
+    int m_lastBlinkPhase;
+    bool m_cursorVisible;
+    DirtyRegionList m_dirtyRegions;
 
     void processKey(Key pressed);
     void pushHistory();
@@ -101,6 +107,13 @@ private:
     void drawButtonGrid();
     int currentUiScale() const;
     int currentPrecision() const;
+    DisplayRect historyRect() const;
+    DisplayRect inputRowRect() const;
+    DisplayRect keypadRect() const;
+    DisplayRect cursorDebugRect() const;
+    DisplayRect cursorRect();
+    void invalidateRect(DisplayRect rect);
+    void invalidateFullScreen();
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {

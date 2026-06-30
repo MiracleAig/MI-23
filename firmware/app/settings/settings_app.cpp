@@ -103,12 +103,16 @@ SettingsApp::SettingsApp(Display& display,
     , m_screen(Screen::Main)
     , m_selectedIndex(0)
     , m_developerIndex(0)
+    , m_dirty(false)
+    , m_saveRequested(false)
     , m_needsRender(true) {}
 
 void SettingsApp::enter() {
     m_screen = Screen::Main;
     m_selectedIndex = 0;
     m_developerIndex = 0;
+    m_saveRequested = false;
+    invalidateContent();
     requestRender();
 }
 
@@ -120,6 +124,7 @@ bool SettingsApp::handleKey(Key key) {
     if (m_screen == Screen::About) {
         if (key == Key::CLEAR || key == Key::ENTER) {
             m_screen = Screen::Main;
+            invalidateContent();
         }
         requestRender();
         return false;
@@ -129,16 +134,20 @@ bool SettingsApp::handleKey(Key key) {
         if (key == Key::ENTER) {
             m_settings.resetToDefaults();
             m_screen = Screen::Main;
+            invalidateContent();
         } else if (key == Key::CLEAR) {
             m_screen = Screen::Main;
+            invalidateContent();
         }
         requestRender();
         return false;
     }
 
     if (m_screen == Screen::Developer) {
+        const int oldDeveloperIndex = m_developerIndex;
         if (key == Key::CLEAR) {
             m_screen = Screen::Main;
+            invalidateContent();
         } else if (key == Key::CURSOR_UP) {
             m_developerIndex = (m_developerIndex + DEV_ITEM_COUNT - 1) % DEV_ITEM_COUNT;
         } else if (key == Key::CURSOR_DOWN) {
@@ -146,12 +155,20 @@ bool SettingsApp::handleKey(Key key) {
         } else if (key == Key::ENTER || key == Key::CURSOR_LEFT || key == Key::CURSOR_RIGHT) {
             toggleDeveloperSelected();
         }
+        if (oldDeveloperIndex != m_developerIndex) {
+            invalidateRect(developerRowRect(0, 22, DISPLAY_WIDTH, oldDeveloperIndex));
+            invalidateRect(developerRowRect(0, 22, DISPLAY_WIDTH, m_developerIndex));
+        }
         requestRender();
         return false;
     }
 
+    const int oldSelectedIndex = m_selectedIndex;
     switch (key) {
         case Key::CLEAR:
+            if (m_dirty) {
+                m_saveRequested = true;
+            }
             return true;
         case Key::CURSOR_UP:
             m_selectedIndex = (m_selectedIndex + MAIN_ITEM_COUNT - 1) % MAIN_ITEM_COUNT;
@@ -180,6 +197,12 @@ bool SettingsApp::handleKey(Key key) {
             break;
     }
 
+    if (oldSelectedIndex != m_selectedIndex) {
+        invalidateContent();
+    } else if (key == Key::CURSOR_LEFT || key == Key::CURSOR_RIGHT || key == Key::ENTER) {
+        invalidateContent();
+    }
+
     requestRender();
     return false;
 }
@@ -189,16 +212,46 @@ void SettingsApp::renderContent(int x, int y, int w, int h) {
         return;
     }
 
-    if (m_screen == Screen::About) {
-        renderAbout(x, y, w, h);
-    } else if (m_screen == Screen::Developer) {
-        renderDeveloper(x, y, w, h);
-    } else if (m_screen == Screen::ResetConfirm) {
-        renderResetConfirm(x, y, w, h);
-    } else {
-        renderMain(x, y, w, h);
+    if (m_dirtyRegions.empty()) {
+        invalidateRect({x, y, w, h});
     }
+
+    for (int i = 0; i < m_dirtyRegions.count(); ++i) {
+        const DisplayRect clip = DirtyRegionList::intersect(m_dirtyRegions.rect(i), {x, y, w, h});
+        if (clip.isEmpty()) {
+            continue;
+        }
+        m_display.setClipRect(clip);
+        if (m_screen == Screen::About) {
+            renderAbout(x, y, w, h);
+        } else if (m_screen == Screen::Developer) {
+            renderDeveloper(x, y, w, h);
+        } else if (m_screen == Screen::ResetConfirm) {
+            renderResetConfirm(x, y, w, h);
+        } else {
+            renderMain(x, y, w, h);
+        }
+    }
+    m_display.clearClipRect();
+    m_dirtyRegions.clear();
     m_needsRender = false;
+}
+
+bool SettingsApp::hasPendingChanges() const {
+    return m_dirty;
+}
+
+bool SettingsApp::consumeSaveRequest() {
+    const bool requested = m_saveRequested;
+    if (requested) {
+        m_saveRequested = false;
+    }
+    return requested;
+}
+
+void SettingsApp::markSaved() {
+    m_dirty = false;
+    m_saveRequested = false;
 }
 
 void SettingsApp::requestRender() {
@@ -324,18 +377,22 @@ void SettingsApp::cycleSelected(int direction) {
             m_settings.angleMode = m_settings.angleMode == AngleMode::Radians
                 ? AngleMode::Degrees
                 : AngleMode::Radians;
+            markChanged();
             break;
         case 1:
             m_settings.graphGrid = !m_settings.graphGrid;
+            markChanged();
             break;
         case 2:
             m_settings.graphAxes = !m_settings.graphAxes;
+            markChanged();
             break;
         case 3: {
             int value = static_cast<int>(m_settings.graphResolution) + direction;
             if (value < 0) value = 2;
             if (value > 2) value = 0;
             m_settings.graphResolution = static_cast<GraphResolution>(value);
+            markChanged();
             break;
         }
         case 4: {
@@ -343,6 +400,7 @@ void SettingsApp::cycleSelected(int direction) {
             if (value < 0) value = 2;
             if (value > 2) value = 0;
             m_settings.theme = static_cast<ThemeMode>(value);
+            markChanged();
             break;
         }
         case 5: {
@@ -350,6 +408,7 @@ void SettingsApp::cycleSelected(int direction) {
             if (value < 0) value = 2;
             if (value > 2) value = 0;
             m_settings.uiScale = static_cast<UiScaleMode>(value);
+            markChanged();
             break;
         }
         case 9:
@@ -373,6 +432,7 @@ void SettingsApp::cyclePrecision(int direction) {
     while (index < 0) index += count;
     index %= count;
     m_settings.calculatorPrecision = PRECISION_VALUES[index];
+    markChanged();
 }
 
 void SettingsApp::toggleDeveloperSelected() {
@@ -384,4 +444,32 @@ void SettingsApp::toggleDeveloperSelected() {
         case 4: m_settings.developer.inputEventLogs = !m_settings.developer.inputEventLogs; break;
         default: break;
     }
+    markChanged();
+}
+
+void SettingsApp::markChanged() {
+    m_settings.sanitize();
+    m_dirty = true;
+}
+
+void SettingsApp::invalidateRect(DisplayRect rect) {
+    m_dirtyRegions.add(rect);
+}
+
+void SettingsApp::invalidateContent() {
+    invalidateRect({0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22});
+}
+
+DisplayRect SettingsApp::mainRowRect(int x, int y, int w, int index) const {
+    constexpr int rowHeight = 18;
+    const int listY = y + 26;
+    const int rowY = listY + index * rowHeight;
+    return {x + 6, rowY - 3, w - 12, rowHeight};
+}
+
+DisplayRect SettingsApp::developerRowRect(int x, int y, int w, int index) const {
+    constexpr int rowHeight = 20;
+    const int listY = y + 30;
+    const int rowY = listY + index * rowHeight;
+    return {x + 6, rowY - 3, w - 12, rowHeight};
 }

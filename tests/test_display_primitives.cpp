@@ -10,45 +10,35 @@ class PixelTrackingDisplay : public Display {
 public:
     void init() override {}
     void clear(Color color) override {
-        pixels.fill(color.rgb565());
+        DisplayRect rect{0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT};
+        if (!clipRect(rect)) {
+            return;
+        }
+        fillRect(rect.x, rect.y, rect.w, rect.h, color);
     }
 
     void drawPixel(int x, int y, Color color) override {
-        if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT) {
+        if (!clipPoint(x, y) ||
+            x < 0 || x >= DISPLAY_WIDTH ||
+            y < 0 || y >= DISPLAY_HEIGHT) {
             return;
         }
         pixels[static_cast<std::size_t>(y * DISPLAY_WIDTH + x)] = color.rgb565();
     }
 
     void fillRect(int x, int y, int w, int h, Color color) override {
-        if (w <= 0 || h <= 0) {
+        DisplayRect rect{x, y, w, h};
+        if (!clipRect(rect)) {
+            return;
+        }
+        rect = DirtyRegionList::intersect(rect, {0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+        if (rect.isEmpty()) {
             return;
         }
 
-        if (x < 0) {
-            w += x;
-            x = 0;
-        }
-        if (y < 0) {
-            h += y;
-            y = 0;
-        }
-        if (x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT) {
-            return;
-        }
-        if (x + w > DISPLAY_WIDTH) {
-            w = DISPLAY_WIDTH - x;
-        }
-        if (y + h > DISPLAY_HEIGHT) {
-            h = DISPLAY_HEIGHT - y;
-        }
-        if (w <= 0 || h <= 0) {
-            return;
-        }
-
-        for (int row = 0; row < h; row++) {
-            for (int col = 0; col < w; col++) {
-                drawPixel(x + col, y + row, color);
+        for (int row = 0; row < rect.h; row++) {
+            for (int col = 0; col < rect.w; col++) {
+                drawPixel(rect.x + col, rect.y + row, color);
             }
         }
     }
@@ -102,4 +92,19 @@ TEST(DisplayPrimitives, OutOfBoundsAndEmptyRectanglesAreClippedOrIgnored) {
     EXPECT_EQ(display.at(1, 1), Display::BLUE.rgb565());
     EXPECT_EQ(display.at(2, 2), Display::BLACK.rgb565());
     EXPECT_EQ(display.at(5, 5), Display::BLACK.rgb565());
+}
+
+TEST(DisplayPrimitives, ClipRectConstrainsClearAndDrawing) {
+    PixelTrackingDisplay display;
+    display.clear(Display::BLACK);
+
+    display.setClipRect({10, 10, 4, 4});
+    display.fillRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, Display::GREEN);
+    display.clear(Display::RED);
+    display.clearClipRect();
+
+    EXPECT_EQ(display.at(9, 9), Display::BLACK.rgb565());
+    EXPECT_EQ(display.at(10, 10), Display::RED.rgb565());
+    EXPECT_EQ(display.at(13, 13), Display::RED.rgb565());
+    EXPECT_EQ(display.at(14, 14), Display::BLACK.rgb565());
 }

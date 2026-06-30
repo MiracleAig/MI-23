@@ -5,11 +5,15 @@
 #include "platform/host/display_sdl.h"
 #include "platform/host/keypad_host.h"
 #include "platform/host/simulator_keypad.h"
+#include "platform/host/settings_store_host.h"
+#include "platform/host/startup_host.h"
+#include "app/boot/boot_manager.h"
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
 #include "app/graphing/graph_app.h"
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
+#include "hal/system_time.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 
@@ -25,23 +29,18 @@ const uint16_t COLOR_BG = Display::rgb(8, 10, 14);
 const uint16_t COLOR_HEADER = Display::rgb(22, 35, 48);
 const uint16_t COLOR_MUTED = Display::rgb(150, 160, 172);
 
-void renderGraphingApp(Display& display, GraphApp& graphApp) {
-    display.clear(COLOR_BG);
+void drawHeader(Display& display, const char* title) {
     display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
-    display.drawText("Graphing", 8, 7, Display::WHITE);
+    display.drawText(title, 8, 7, Display::WHITE);
     display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
                      COLOR_MUTED);
-
-    graphApp.renderContent(display, 0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
 }
 
-void renderSettingsApp(Display& display, SettingsApp& settingsApp) {
-    display.clear(COLOR_BG);
+void drawHomeHeader(Display& display) {
     display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
-    display.drawText("Settings", 8, 7, Display::WHITE);
+    display.drawText("MI-23 Home", 8, 7, Display::WHITE);
     display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
                      COLOR_MUTED);
-    settingsApp.renderContent(0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
 }
 
 class HostAppController {
@@ -50,18 +49,26 @@ public:
         : m_display(display)
         , m_keypad(keypad)
         , m_settings()
+        , m_settingsStore()
+        , m_startup(m_keypad, m_settingsStore)
+        , m_boot(display, m_settings, m_startup)
         , m_home(display)
         , m_calculator(display, keypad, hostCalculatorConfig(m_settings))
         , m_simulatorKeypad()
         , m_graph(&m_settings)
         , m_settingsApp(display, m_settings, "Simulator")
-        , m_activeApp(AppId::Home)
+        , m_activeApp(AppId::Boot)
+        , m_needsFrame(true)
+        , m_shellDirty(true)
     {}
 
     void init() {
         m_display.init();
-        m_keypad.init();
-        m_home.enter();
+        if (!m_display.isReady()) {
+            m_display.setQuit();
+            return;
+        }
+        m_boot.begin();
     }
 
     void handleEvents() {
@@ -77,6 +84,7 @@ public:
             if (event.type == SDL_MOUSEWHEEL &&
                 m_activeApp == AppId::Calculator) {
                 m_calculator.scrollHistory(event.wheel.y > 0 ? -1 : 1);
+                m_needsFrame = true;
             }
             if (event.type == SDL_MOUSEBUTTONDOWN &&
                 event.button.button == SDL_BUTTON_LEFT) {
@@ -99,48 +107,55 @@ public:
     }
 
     void update() {
-        const Key pressed = m_keypad.getKey();
-
-        if (pressed == Key::HOME) {
-            goHome();
-            return;
+        if (m_activeApp == AppId::Calculator && m_calculator.updateBlink(systemTimeMs())) {
+            m_needsFrame = true;
+        }
+        if (m_activeApp == AppId::Home && m_home.needsRender()) {
+            m_needsFrame = true;
         }
 
-        if (m_activeApp == AppId::Home) {
-            const AppId launchTarget = m_home.handleKey(pressed);
-            if (launchTarget != AppId::Home) {
-                launch(launchTarget);
-            }
-        } else if (m_activeApp == AppId::Calculator) {
-            m_calculator.handleKey(pressed);
-        } else if (m_activeApp == AppId::Graphing) {
-            m_graph.handleKey(pressed);
-        } else if (m_activeApp == AppId::Settings) {
-            if (m_settingsApp.handleKey(pressed)) {
-                goHome();
-            }
+        const Key pressed = m_keypad.getKey();
+        if (pressed != Key::NONE) {
+            dispatchKey(pressed);
         }
     }
 
     void render() {
+        if (!m_needsFrame) {
+            SDL_Delay(16);
+            return;
+        }
+
         m_display.setPresentEnabled(false);
 
         if (m_activeApp == AppId::Home) {
-            m_home.render();
+            if (m_shellDirty) {
+                drawHomeHeader(m_display);
+            }
+            m_home.renderContent(22, DISPLAY_HEIGHT - 22);
+        } else if (m_activeApp == AppId::Boot) {
+            m_boot.render();
         } else if (m_activeApp == AppId::Calculator) {
-            m_calculator.requestRender();
             m_calculator.render();
         } else if (m_activeApp == AppId::Graphing) {
-            m_graph.requestRender();
-            renderGraphingApp(m_display, m_graph);
+            if (m_shellDirty) {
+                drawHeader(m_display, "Graphing");
+            }
+            m_graph.renderContent(m_display, 0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
         } else if (m_activeApp == AppId::Settings) {
-            m_settingsApp.requestRender();
-            renderSettingsApp(m_display, m_settingsApp);
+            if (m_shellDirty) {
+                drawHeader(m_display, "Settings");
+            }
+            m_settingsApp.renderContent(0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
         }
 
-        m_simulatorKeypad.render(m_display, &m_settings);
+        if (m_activeApp != AppId::Boot) {
+            m_simulatorKeypad.render(m_display, &m_settings);
+        }
         m_display.setPresentEnabled(true);
         m_display.forcePresent();
+        m_needsFrame = false;
+        m_shellDirty = false;
 
         SDL_Delay(16);
     }
@@ -149,15 +164,26 @@ private:
     DisplaySDL& m_display;
     KeypadHost& m_keypad;
     SettingsState m_settings;
+    HostSettingsStore m_settingsStore;
+    HostStartupBackend m_startup;
+    BootManager m_boot;
     HomeScreen m_home;
     CalculatorApp m_calculator;
     SimulatorKeypad m_simulatorKeypad;
     GraphApp m_graph;
     SettingsApp m_settingsApp;
     AppId m_activeApp;
+    bool m_needsFrame;
+    bool m_shellDirty;
 
     void dispatchKey(Key key) {
-        if (key == Key::HOME) {
+        if (m_activeApp == AppId::Boot) {
+            m_boot.handleKey(key);
+            if (m_boot.isFinished()) {
+                finishBoot();
+            }
+        } else if (key == Key::HOME) {
+            maybePersistSettings();
             goHome();
         } else if (m_activeApp == AppId::Home) {
             const AppId launchTarget = m_home.handleKey(key);
@@ -170,8 +196,12 @@ private:
             m_graph.handleKey(key);
         } else if (m_activeApp == AppId::Settings) {
             if (m_settingsApp.handleKey(key)) {
+                maybePersistSettings();
                 goHome();
             }
+        }
+        if (key != Key::NONE) {
+            m_needsFrame = true;
         }
     }
 
@@ -179,19 +209,58 @@ private:
         if (m_activeApp != AppId::Home) {
             m_home.enter();
             m_activeApp = AppId::Home;
+            m_needsFrame = true;
+            m_shellDirty = true;
+        }
+    }
+
+    void finishBoot() {
+        m_home.enter();
+        m_activeApp = AppId::Home;
+        m_needsFrame = true;
+        m_shellDirty = true;
+    }
+
+    void maybePersistSettings() {
+        if (m_activeApp != AppId::Settings) {
+            return;
+        }
+
+        if (m_settingsApp.consumeSaveRequest() || m_settingsApp.hasPendingChanges()) {
+            if (m_settingsStore.save(m_settings)) {
+                m_settingsApp.markSaved();
+            }
         }
     }
 
     void launch(AppId app) {
         if (app == AppId::Calculator || app == AppId::Graphing || app == AppId::Settings) {
             m_activeApp = app;
+            m_shellDirty = true;
             if (app == AppId::Calculator) {
                 m_calculator.requestRender();
+                m_calculator.updateBlink(systemTimeMs());
             } else if (app == AppId::Graphing) {
                 m_graph.enter();
             } else if (app == AppId::Settings) {
                 m_settingsApp.enter();
             }
+            m_needsFrame = true;
+        }
+    }
+
+public:
+    void updateBoot() {
+        if (m_activeApp != AppId::Boot) {
+            return;
+        }
+
+        m_boot.tick();
+        if (m_boot.isFinished()) {
+            finishBoot();
+        }
+        if (m_boot.needsRender()) {
+            m_needsFrame = true;
         }
     }
 };
@@ -214,6 +283,7 @@ int main(int argc, char* argv[]) {
 
     while (!display.shouldQuit()) {
         app.handleEvents();
+        app.updateBoot();
         app.update();
         app.render();
     }

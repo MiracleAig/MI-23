@@ -12,6 +12,8 @@ if(PLATFORM STREQUAL "host")
     )
 
     add_library(calculator_app STATIC
+            app/boot/boot_manager.cpp
+            app/boot/boot_manager.h
             app/calculator/calculator_app.cpp
             app/calculator/calculator_app.h
             app/calculator/history.h
@@ -23,9 +25,15 @@ if(PLATFORM STREQUAL "host")
             app/settings/settings_app.h
             app/settings/settings_state.cpp
             app/settings/settings_state.h
+            hal/settings_store.cpp
+            hal/settings_store.h
             graphics/font.h
             hal/display.h
             hal/keypad.h
+            platform/host/settings_store_host.cpp
+            platform/host/settings_store_host.h
+            platform/host/startup_host.cpp
+            platform/host/startup_host.h
             app/home/calculator_home.cpp
             app/home/calculator_home.h
     )

@@ -5,6 +5,9 @@
 
 
 #pragma once
+#include <cstddef>
+#include <cstdint>
+
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 
@@ -40,6 +43,12 @@ public:
     void fillScreen(uint16_t color);
     void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void drawPixel(int16_t x, int16_t y, uint16_t color);
+    void writeRect(int16_t x,
+                   int16_t y,
+                   int16_t w,
+                   int16_t h,
+                   const uint16_t* pixels,
+                   int sourceStridePixels);
 
     // Convert RGB888 (normal 0-255 per channel) to RGB565
     static uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
@@ -51,8 +60,7 @@ private:
     uint _pin_cs, _pin_dc, _pin_rst, _pin_sck, _pin_mosi;
 
     void sendCommand(uint8_t cmd);
-    void sendData(uint8_t data);
-    void sendData16(uint16_t data);
+    void sendData(const uint8_t* data, size_t length);
     void setWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
     void csLow()  { gpio_put(_pin_cs, 0); }
     void csHigh() { gpio_put(_pin_cs, 1); }

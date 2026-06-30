@@ -3,49 +3,102 @@
 //
 
 #include "platform/rp2350/display_rp2350.h"
+
 #include "graphics/font.h"
+#include "platform/rp2350/config/pin_config.h"
+
+#include <algorithm>
 
 DisplayRP2350::DisplayRP2350()
-    : m_display(spi1, 13, 14, 15, 10, 11)
-    // spi1, CS=GP13, DC=GP14, RST=GP15, SCK=GP10, MOSI=GP11
-{}
+    : m_display(spi1,
+                PIN_DISPLAY_CS,
+                PIN_DISPLAY_DC,
+                PIN_DISPLAY_RST,
+                PIN_DISPLAY_SCK,
+                PIN_DISPLAY_MOSI) {
+    m_framebuffer.fill(Display::BLACK.rgb565());
+}
 
 void DisplayRP2350::init() {
     m_display.init();
-    clear(Display::BLACK);
+    markDirty({0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+    present();
+}
+
+void DisplayRP2350::markDirty(const DisplayRect& rect) {
+    m_presentRegions.add(rect);
 }
 
 void DisplayRP2350::clear(Color color) {
-    // Note: DISPLAY_WIDTH and DISPLAY_HEIGHT in display.h are 320x240
-    // (landscape) but the ST7789 is physically 240x320 (portrait).
-    // We swap them here so the rest of the codebase sees a landscape display
-    // matching the simulator, without changing anything else.
-    m_display.fillRect(0, 0, ST7789_WIDTH, ST7789_HEIGHT, color.rgb565());
+    DisplayRect rect{0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT};
+    if (!clipRect(rect)) {
+        return;
+    }
+
+    const uint16_t value = color.rgb565();
+    for (int row = 0; row < rect.h; ++row) {
+        uint16_t* line = &m_framebuffer[static_cast<std::size_t>((rect.y + row) *
+                                                                 DISPLAY_WIDTH +
+                                                                 rect.x)];
+        std::fill(line, line + rect.w, value);
+    }
+    markDirty(rect);
 }
 
 void DisplayRP2350::drawPixel(int x, int y, Color color) {
-    m_display.drawPixel(x, y, color.rgb565());
+    if (!clipPoint(x, y) ||
+        x < 0 || x >= DISPLAY_WIDTH ||
+        y < 0 || y >= DISPLAY_HEIGHT) {
+        return;
+    }
+
+    m_framebuffer[static_cast<std::size_t>(y * DISPLAY_WIDTH + x)] = color.rgb565();
+    markDirty({x, y, 1, 1});
 }
 
 void DisplayRP2350::fillRect(int x, int y, int w, int h, Color color) {
-    m_display.fillRect(x, y, w, h, color.rgb565());
+    DisplayRect rect{x, y, w, h};
+    if (!clipRect(rect)) {
+        return;
+    }
+    rect = DirtyRegionList::intersect(rect, {0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+    if (rect.isEmpty()) {
+        return;
+    }
+
+    const uint16_t value = color.rgb565();
+    for (int row = 0; row < rect.h; ++row) {
+        uint16_t* line = &m_framebuffer[static_cast<std::size_t>((rect.y + row) *
+                                                                 DISPLAY_WIDTH +
+                                                                 rect.x)];
+        std::fill(line, line + rect.w, value);
+    }
+    markDirty(rect);
 }
 
 void DisplayRP2350::drawChar(char c, int x, int y, Color color, int scale) {
-    uint8_t idx = (uint8_t)c;
+    const uint8_t idx = static_cast<uint8_t>(c);
     const uint8_t* bitmap = &FONT_DATA[idx * FONT_CHAR_WIDTH];
+    const uint16_t value = color.rgb565();
 
-    for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
-        uint8_t colData = bitmap[col];
-        for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-            if (colData & (1 << row)) {
-                // Draw a scale×scale block instead of a single pixel
-                m_display.fillRect(
-                    x + col * scale,
-                    y + row * scale,
-                    scale, scale,
-                    color.rgb565()
-                );
+    for (int col = 0; col < FONT_CHAR_WIDTH; ++col) {
+        const uint8_t colData = bitmap[col];
+        for (int row = 0; row < FONT_CHAR_HEIGHT; ++row) {
+            if ((colData & (1U << row)) == 0) {
+                continue;
+            }
+
+            for (int sy = 0; sy < scale; ++sy) {
+                for (int sx = 0; sx < scale; ++sx) {
+                    int px = x + col * scale + sx;
+                    int py = y + row * scale + sy;
+                    if (!clipPoint(px, py) ||
+                        px < 0 || px >= DISPLAY_WIDTH ||
+                        py < 0 || py >= DISPLAY_HEIGHT) {
+                        continue;
+                    }
+                    m_framebuffer[static_cast<std::size_t>(py * DISPLAY_WIDTH + px)] = value;
+                }
             }
         }
     }
@@ -56,17 +109,37 @@ void DisplayRP2350::drawText(const char* text, int x, int y, Color color) {
 }
 
 void DisplayRP2350::drawText(const char* text, int x, int y, Color color, int scale) {
+    if (!text) {
+        return;
+    }
+
     int cursorX = x;
-    while (*text) {
+    while (*text != '\0') {
         drawChar(*text, cursorX, y, color, scale);
         cursorX += FONT_CHAR_ADVANCE * scale;
-        text++;
+        ++text;
     }
+
+    markDirty({x, y, cursorX - x, FONT_CHAR_HEIGHT * std::max(1, scale)});
 }
 
-
 void DisplayRP2350::present() {
-    // ST7789 is write-through — pixels go directly to the display
-    // as they're drawn, so there's nothing to flush here.
-    // This method exists to satisfy the Display interface.
+    if (m_presentRegions.empty()) {
+        return;
+    }
+
+    for (int i = 0; i < m_presentRegions.count(); ++i) {
+        const DisplayRect rect = m_presentRegions.rect(i);
+        const uint16_t* pixels = &m_framebuffer[static_cast<std::size_t>(rect.y *
+                                                                         DISPLAY_WIDTH +
+                                                                         rect.x)];
+        m_display.writeRect(rect.x,
+                            rect.y,
+                            rect.w,
+                            rect.h,
+                            pixels,
+                            DISPLAY_WIDTH);
+    }
+
+    m_presentRegions.clear();
 }

@@ -5,6 +5,7 @@
 #include "app/home/calculator_home.h"
 #include "graphics/font.h"
 #include <algorithm>
+#include <cstdio>
 
 namespace {
 
@@ -133,13 +134,18 @@ void drawIcon(Display& display,
 HomeScreen::HomeScreen(Display& display)
     : m_display(display)
     , m_selectedIndex(appIndex(AppId::Calculator))
+    , m_needsRender(true)
 {}
 
 void HomeScreen::enter() {
     m_selectedIndex = appIndex(AppId::Calculator);
+    invalidateContent(22, DISPLAY_HEIGHT - 22);
+    m_needsRender = true;
 }
 
 AppId HomeScreen::handleKey(Key key) {
+    const int oldSelectedIndex = m_selectedIndex;
+
     switch (key) {
         case Key::CURSOR_LEFT:
             moveSelection(-1, 0);
@@ -159,24 +165,70 @@ AppId HomeScreen::handleKey(Key key) {
             break;
     }
 
+    if (oldSelectedIndex != m_selectedIndex) {
+        invalidateContent(22, DISPLAY_HEIGHT - 22);
+        m_needsRender = true;
+        std::printf("[render] home selection %d -> %d redraw=1\n",
+                    oldSelectedIndex,
+                    m_selectedIndex);
+    } else if (key != Key::NONE) {
+        std::printf("[render] home selection unchanged=%d key=%d redraw=0\n",
+                    m_selectedIndex,
+                    static_cast<int>(key));
+    }
+
     return AppId::Home;
 }
 
 void HomeScreen::render() {
-    m_display.clear(COLOR_BG);
+    if (!m_needsRender) {
+        return;
+    }
+    if (m_dirtyRegions.empty()) {
+        invalidateRect({0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+    }
 
-    m_display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
-    m_display.drawText("MI-23 Home", 8, 7, Display::WHITE);
-    m_display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
-                       COLOR_MUTED);
-
-    renderContentArea(22, DISPLAY_HEIGHT - 22);
+    for (int i = 0; i < m_dirtyRegions.count(); ++i) {
+        m_display.setClipRect(m_dirtyRegions.rect(i));
+        m_display.clear(COLOR_BG);
+        m_display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
+        m_display.drawText("MI-23 Home", 8, 7, Display::WHITE);
+        m_display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
+                           COLOR_MUTED);
+        renderContentArea(22, DISPLAY_HEIGHT - 22);
+    }
+    m_display.clearClipRect();
+    m_dirtyRegions.clear();
     m_display.present();
+    m_needsRender = false;
 }
 
 void HomeScreen::renderContent(int contentY, int contentHeight) {
-    renderContentArea(contentY, contentHeight);
+    if (!m_needsRender) {
+        return;
+    }
+    if (m_dirtyRegions.empty()) {
+        invalidateRect({0, contentY, DISPLAY_WIDTH, contentHeight});
+    }
+
+    for (int i = 0; i < m_dirtyRegions.count(); ++i) {
+        const DisplayRect clip = DirtyRegionList::intersect(
+            m_dirtyRegions.rect(i),
+            {0, contentY, DISPLAY_WIDTH, contentHeight});
+        if (clip.isEmpty()) {
+            continue;
+        }
+        m_display.setClipRect(clip);
+        renderContentArea(contentY, contentHeight);
+    }
+    m_display.clearClipRect();
+    m_dirtyRegions.clear();
     m_display.present();
+    m_needsRender = false;
+}
+
+void HomeScreen::invalidateContent(int contentY, int contentHeight) {
+    invalidateRect({0, contentY, DISPLAY_WIDTH, contentHeight});
 }
 
 void HomeScreen::renderContentArea(int contentY, int contentHeight) {
@@ -234,4 +286,12 @@ void HomeScreen::moveSelection(int deltaCol, int deltaRow) {
     const int nextCol = std::clamp(currentCol + deltaCol, 0, lastColInRow);
 
     m_selectedIndex = nextRow * GRID_COLS + nextCol;
+}
+
+bool HomeScreen::needsRender() const {
+    return m_needsRender;
+}
+
+void HomeScreen::invalidateRect(DisplayRect rect) {
+    m_dirtyRegions.add(rect);
 }

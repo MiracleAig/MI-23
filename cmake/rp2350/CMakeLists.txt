@@ -2,6 +2,8 @@ set(RP2350_PLATFORM_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/platform/rp2350)
 set(ST7789_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/drivers/st7789)
 
 add_executable(mi23
+        ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.h
         ${RP2350_PLATFORM_SOURCE_DIR}/main_rp2350.cpp
         ${ST7789_SOURCE_DIR}/st7789.cpp
         ${ST7789_SOURCE_DIR}/st7789.h
@@ -17,11 +19,17 @@ add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.cpp
+        ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.cpp
+        ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.h
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.h
+        ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.h
+        ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.h
+        ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.h
 )
 
 target_link_libraries(mi23 PRIVATE
@@ -29,6 +37,7 @@ target_link_libraries(mi23 PRIVATE
         expression_lib
         pico_stdlib
         hardware_spi
+        hardware_flash
 )
 
 target_include_directories(mi23 PRIVATE

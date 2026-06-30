@@ -1,16 +1,69 @@
 #include "app/settings/settings_state.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <type_traits>
 
 void SettingsState::resetToDefaults() {
-    angleMode = AngleMode::Radians;
-    graphGrid = true;
-    graphAxes = true;
-    graphResolution = GraphResolution::Medium;
-    theme = ThemeMode::Dark;
-    uiScale = UiScaleMode::Normal;
-    calculatorPrecision = 6;
+    angleMode = kDefaultAngleMode;
+    graphGrid = kDefaultGraphGrid;
+    graphAxes = kDefaultGraphAxes;
+    graphResolution = kDefaultGraphResolution;
+    theme = kDefaultTheme;
+    uiScale = kDefaultUiScale;
+    calculatorPrecision = kDefaultCalculatorPrecision;
     developer = {};
+}
+
+bool SettingsState::sanitize() {
+    bool changed = false;
+
+    auto clampEnum = [&changed](auto& value, int minValue, int maxValue, auto defaultValue) {
+        using EnumType = std::remove_reference_t<decltype(value)>;
+        const int numeric = static_cast<int>(value);
+        if (numeric < minValue) {
+            value = static_cast<EnumType>(minValue);
+            changed = true;
+        } else if (numeric > maxValue) {
+            value = static_cast<EnumType>(maxValue);
+            changed = true;
+        }
+        if (static_cast<int>(value) < minValue || static_cast<int>(value) > maxValue) {
+            value = defaultValue;
+            changed = true;
+        }
+    };
+
+    clampEnum(angleMode, static_cast<int>(AngleMode::Degrees), static_cast<int>(AngleMode::Radians), kDefaultAngleMode);
+    clampEnum(graphResolution,
+              static_cast<int>(GraphResolution::Low),
+              static_cast<int>(GraphResolution::High),
+              kDefaultGraphResolution);
+    clampEnum(theme, static_cast<int>(ThemeMode::Dark), static_cast<int>(ThemeMode::Classic), kDefaultTheme);
+    clampEnum(uiScale, static_cast<int>(UiScaleMode::Small), static_cast<int>(UiScaleMode::Large), kDefaultUiScale);
+
+    constexpr int kPrecisionValues[] = {3, 6, 9, 12};
+    bool precisionValid = false;
+    int bestPrecision = kPrecisionValues[0];
+    int bestDistance = std::abs(calculatorPrecision - bestPrecision);
+    for (const int candidate : kPrecisionValues) {
+        if (candidate == calculatorPrecision) {
+            precisionValid = true;
+            break;
+        }
+        const int distance = std::abs(calculatorPrecision - candidate);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestPrecision = candidate;
+        }
+    }
+
+    if (!precisionValid) {
+        calculatorPrecision = bestPrecision;
+        changed = true;
+    }
+
+    return changed;
 }
 
 int SettingsState::graphSamplesPerPixel() const {

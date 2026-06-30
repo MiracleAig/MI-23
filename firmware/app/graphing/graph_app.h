@@ -52,6 +52,7 @@ private:
     const SettingsState* m_settings;
     GraphMode m_mode;
     bool m_needsRender;
+    DirtyRegionList m_dirtyRegions;
     bool m_editHasError;
     GraphErrorType m_editError;
     StoredFunction m_functions[FUNCTION_COUNT];
@@ -63,6 +64,7 @@ private:
     double m_traceX;
     double m_traceY;
     bool m_traceHasPoint;
+    DisplayRect m_contentBounds;
 
     void enterEditMode();
     void acceptEdit();
@@ -87,4 +89,10 @@ private:
     void renderGraph(Display& display, int x, int y, int w, int h);
     void renderEditor(Display& display, int x, int y, int w, int h);
     void renderTraceOverlay(Display& display, const GraphViewport& viewport, int x, int y, int w, int h);
+    DisplayRect contentBounds() const;
+    DisplayRect graphViewportRect() const;
+    DisplayRect graphFooterRect() const;
+    void invalidateRect(DisplayRect rect);
+    void invalidateContent();
+    void invalidateGraphViewportOnly();
 };

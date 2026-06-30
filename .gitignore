@@ -57,7 +57,10 @@ Makefile
 .idea/
 cmake-build-*/
 *.iml
-
+.riff
+.cache/
+.cache/jb/
+.cache/jb/symbols/
 # Compiled binaries
 mi23
 *.uf2
