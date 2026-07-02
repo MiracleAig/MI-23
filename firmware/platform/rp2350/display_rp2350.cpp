@@ -15,7 +15,8 @@ DisplayRP2350::DisplayRP2350()
                 PIN_DISPLAY_DC,
                 PIN_DISPLAY_RST,
                 PIN_DISPLAY_SCK,
-                PIN_DISPLAY_MOSI) {
+                PIN_DISPLAY_MOSI,
+                PIN_DISPLAY_BL) {
     m_framebuffer.fill(Display::BLACK.rgb565());
 }
 

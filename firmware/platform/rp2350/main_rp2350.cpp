@@ -21,8 +21,8 @@
 
 namespace {
 
-static constexpr int SCREEN_W = 320;
-static constexpr int SCREEN_H = 240;
+static constexpr int SCREEN_W = DISPLAY_WIDTH;
+static constexpr int SCREEN_H = DISPLAY_HEIGHT;
 static constexpr int HEADER_HEIGHT = 22;
 static constexpr int CONTENT_Y = HEADER_HEIGHT;
 static constexpr int CONTENT_H = SCREEN_H - HEADER_HEIGHT;

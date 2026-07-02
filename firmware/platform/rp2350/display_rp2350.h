@@ -4,7 +4,7 @@
 
 #pragma once
 #include "hal/display.h"
-#include "../../drivers/st7789/st7789.h"
+#include "drivers/ili9488/ili9488.h"
 #include "hardware/spi.h"
 #include <array>
 
@@ -25,7 +25,7 @@ private:
     void drawChar(char c, int x, int y, Color color, int scale);
     void markDirty(const DisplayRect& rect);
 
-    ST7789 m_display;
+    ILI9488 m_display;
     std::array<uint16_t, DISPLAY_WIDTH * DISPLAY_HEIGHT> m_framebuffer{};
     DirtyRegionList m_presentRegions;
 };

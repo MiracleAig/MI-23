@@ -8,8 +8,8 @@
 
 #include "graphics/font.h"
 
-static const int DISPLAY_WIDTH = 320;
-static const int DISPLAY_HEIGHT = 240;
+static const int DISPLAY_WIDTH = 480;
+static const int DISPLAY_HEIGHT = 320;
 
 struct Color {
     uint16_t value;

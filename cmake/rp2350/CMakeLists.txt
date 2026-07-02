@@ -1,12 +1,12 @@
 set(RP2350_PLATFORM_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/platform/rp2350)
-set(ST7789_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/drivers/st7789)
+set(ILI9488_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/drivers/ili9488)
 
 add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.h
         ${RP2350_PLATFORM_SOURCE_DIR}/main_rp2350.cpp
-        ${ST7789_SOURCE_DIR}/st7789.cpp
-        ${ST7789_SOURCE_DIR}/st7789.h
+        ${ILI9488_SOURCE_DIR}/ili9488.cpp
+        ${ILI9488_SOURCE_DIR}/ili9488.h
         ${RP2350_PLATFORM_SOURCE_DIR}/display_rp2350.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/display_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350.cpp
