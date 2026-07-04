@@ -140,7 +140,7 @@ Key KeypadRP2350::scanMatrix() {
 //   [ 1 ][ 2 ][ 3 ][ A ]
 //   [ 4 ][ 5 ][ 6 ][ B ]
 //   [ 7 ][ 8 ][ 9 ][ C ]
-//   [ * ][ 0 ][ + ][ D ]
+//   [ + ][ 0 ][ . ][ D ]
 //
 // A/B/C/D (rightmost column) are mapped to calculator actions.
 // * and + are mapped to useful math symbols.

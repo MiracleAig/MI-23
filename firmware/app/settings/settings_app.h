@@ -10,6 +10,9 @@ public:
 
     void enter();
     bool handleKey(Key key);
+    bool hasPendingChanges() const;
+    bool consumeSaveRequest();
+    void markSaved();
     void renderContent(int x, int y, int w, int h);
     void requestRender();
     bool needsRender() const;
@@ -28,7 +31,11 @@ private:
     Screen m_screen;
     int m_selectedIndex;
     int m_developerIndex;
+    bool m_dirty;
+    bool m_saveRequested;
     bool m_needsRender;
+    DirtyRegionList m_dirtyRegions;
+    DisplayRect m_contentBounds;
 
     void renderMain(int x, int y, int w, int h);
     void renderAbout(int x, int y, int w, int h);
@@ -37,4 +44,9 @@ private:
     void cycleSelected(int direction);
     void cyclePrecision(int direction);
     void toggleDeveloperSelected();
+    void markChanged();
+    void invalidateRect(DisplayRect rect);
+    void invalidateContent();
+    DisplayRect mainRowRect(int x, int y, int w, int index) const;
+    DisplayRect developerRowRect(int x, int y, int w, int index) const;
 };

@@ -10,6 +10,7 @@
 #include "hal/keypad.h"
 #include "math/math_typeset.h"
 #include <array>
+#include <cstdint>
 
 static constexpr int MARGIN       = 5;
 static constexpr int ROW_HEIGHT   = 20;
@@ -53,7 +54,10 @@ public:
     void handlePointerDown(int logicalX, int logicalY);
     void scrollHistory(int delta);
     void render();
+    void renderContent(int contentY, int contentHeight);
+    bool updateBlink(uint64_t nowMs);
     void requestRender();
+    void requestInputRender();
     const char* input() const { return m_inputBuffer; }
     int cursorPos() const { return m_cursorPos; }
     int historySize() const;
@@ -76,6 +80,8 @@ private:
     bool m_awaitingNewInput;
     int m_historyBottom;
     int m_historyHeight;
+    int m_contentY;
+    int m_contentHeight;
 
     std::array<HistoryEntry, MAX_HISTORY> m_history;
     int m_historyCount;
@@ -86,6 +92,9 @@ private:
     Key m_injectedKey;
     CalculatorAppConfig m_config;
     bool m_needsRender;
+    int m_lastBlinkPhase;
+    bool m_cursorVisible;
+    DirtyRegionList m_dirtyRegions;
 
     void processKey(Key pressed);
     void pushHistory();
@@ -101,14 +110,23 @@ private:
     void drawButtonGrid();
     int currentUiScale() const;
     int currentPrecision() const;
+    int contentBottom() const;
+    int historyTop() const;
+    void setContentArea(int contentY, int contentHeight);
+    void updateContentMetrics();
+    DisplayRect historyRect() const;
+    DisplayRect inputRowRect() const;
+    DisplayRect keypadRect() const;
+    DisplayRect cursorDebugRect() const;
+    DisplayRect cursorRect();
+    void invalidateRect(DisplayRect rect);
+    void invalidateFullScreen();
 
     // Maps grid position (col, row) to pixel rect top-left
     static int btnX(int col) {
         return BTN_MARGIN + col * (BTN_W + BTN_MARGIN);
     }
-    static int btnY(int row) {
-        return BTN_AREA_TOP + BTN_MARGIN + row * (BTN_H + BTN_MARGIN);
-    }
+    int buttonY(int row) const;
 
     // Returns which button was clicked, or nullptr if click missed all buttons
     const Button* hitTest(int mouseX, int mouseY) const;

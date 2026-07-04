@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 enum class AngleMode {
     Degrees,
     Radians,
@@ -32,6 +34,16 @@ struct DeveloperSettings {
 };
 
 struct SettingsState {
+    static constexpr AngleMode kDefaultAngleMode = AngleMode::Radians;
+    static constexpr bool kDefaultGraphGrid = true;
+    static constexpr bool kDefaultGraphAxes = true;
+    static constexpr GraphResolution kDefaultGraphResolution = GraphResolution::Medium;
+    static constexpr ThemeMode kDefaultTheme = ThemeMode::Dark;
+    static constexpr UiScaleMode kDefaultUiScale = UiScaleMode::Normal;
+    static constexpr int kDefaultCalculatorPrecision = 6;
+    static constexpr int kMinCalculatorPrecision = 3;
+    static constexpr int kMaxCalculatorPrecision = 12;
+
     AngleMode angleMode = AngleMode::Radians;
     bool graphGrid = true;
     bool graphAxes = true;
@@ -42,6 +54,7 @@ struct SettingsState {
     DeveloperSettings developer;
 
     void resetToDefaults();
+    bool sanitize();
 
     int graphSamplesPerPixel() const;
     int uiScaleValue(int normalScale = 1) const;

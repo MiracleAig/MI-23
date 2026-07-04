@@ -11,7 +11,7 @@
 #define PIN_DISPLAY_CS      13   // Chip select         — active LOW
 #define PIN_DISPLAY_DC      14   // Data/command select — LOW=command, HIGH=data
 #define PIN_DISPLAY_RST     15   // Hardware reset      — active LOW
-// BL (backlight) is wired directly to 3.3V — always on, not software controlled
+#define PIN_DISPLAY_BL      12   // Backlight enable    — HIGH=on
 
 // ── Keypad 1 — numpad (4×4 matrix) ──────────────────────────────────────────
 // Wire color reference:

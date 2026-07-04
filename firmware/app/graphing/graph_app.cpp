@@ -130,6 +130,7 @@ GraphApp::GraphApp(const SettingsState* settings)
     , m_settings(settings)
     , m_mode(GraphMode::View)
     , m_needsRender(true)
+    , m_dirtyRegions()
     , m_editHasError(false)
     , m_editError(GraphErrorType::None)
     , m_functions{}
@@ -140,7 +141,8 @@ GraphApp::GraphApp(const SettingsState* settings)
     , m_window(DEFAULT_WINDOW)
     , m_traceX(0.0)
     , m_traceY(0.0)
-    , m_traceHasPoint(false) {
+    , m_traceHasPoint(false)
+    , m_contentBounds{0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22} {
     copyText(m_functions[0].expression,
              GraphRenderer::DEFAULT_EXPRESSION,
              MAX_EXPRESSION_LENGTH + 1);
@@ -151,6 +153,7 @@ GraphApp::GraphApp(const SettingsState* settings)
 void GraphApp::enter() {
     m_mode = GraphMode::View;
     m_editHasError = false;
+    invalidateContent();
     requestRender();
 }
 
@@ -232,11 +235,25 @@ void GraphApp::handleKey(Key key) {
 }
 
 void GraphApp::renderContent(Display& display, int x, int y, int w, int h) {
-    if (m_mode == GraphMode::EditEquation) {
-        renderEditor(display, x, y, w, h);
-    } else {
-        renderGraph(display, x, y, w, h);
+    m_contentBounds = {x, y, w, h};
+    if (m_dirtyRegions.empty()) {
+        invalidateRect(m_contentBounds);
     }
+
+    for (int i = 0; i < m_dirtyRegions.count(); ++i) {
+        const DisplayRect clip = DirtyRegionList::intersect(m_dirtyRegions.rect(i), m_contentBounds);
+        if (clip.isEmpty()) {
+            continue;
+        }
+        display.setClipRect(clip);
+        if (m_mode == GraphMode::EditEquation) {
+            renderEditor(display, x, y, w, h);
+        } else {
+            renderGraph(display, x, y, w, h);
+        }
+    }
+    display.clearClipRect();
+    m_dirtyRegions.clear();
     m_needsRender = false;
 }
 
@@ -292,6 +309,7 @@ void GraphApp::enterEditMode() {
     m_mode = GraphMode::EditEquation;
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
 }
 
@@ -304,6 +322,7 @@ bool GraphApp::commitEditBuffer(bool exitOnSuccess) {
     if (!isAcceptableExpression(m_editBuffer, error)) {
         m_editHasError = true;
         m_editError = error;
+        invalidateContent();
         requestRender();
         return false;
     }
@@ -325,6 +344,7 @@ bool GraphApp::commitEditBuffer(bool exitOnSuccess) {
     }
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
     return true;
 }
@@ -370,6 +390,7 @@ void GraphApp::selectEditFunction(int index) {
     m_editCursor = m_editLength;
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
 }
 
@@ -382,6 +403,7 @@ void GraphApp::toggleSelectedFunction() {
     } else {
         m_functions[m_selectedFunction].enabled = !m_functions[m_selectedFunction].enabled;
     }
+    invalidateContent();
     requestRender();
 }
 
@@ -404,6 +426,7 @@ void GraphApp::appendText(const char* text) {
     m_editBuffer[m_editLength] = '\0';
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
 }
 
@@ -419,6 +442,7 @@ void GraphApp::backspace() {
     m_editBuffer[m_editLength] = '\0';
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
 }
 
@@ -433,6 +457,7 @@ void GraphApp::deleteAtCursor() {
     m_editBuffer[m_editLength] = '\0';
     m_editHasError = false;
     m_editError = GraphErrorType::None;
+    invalidateContent();
     requestRender();
 }
 
@@ -442,6 +467,7 @@ void GraphApp::moveCursor(int delta) {
         return;
     }
     m_editCursor = next;
+    invalidateContent();
     requestRender();
 }
 
@@ -464,12 +490,14 @@ void GraphApp::zoom(double factor) {
     m_window.yMin = centerY - halfY;
     m_window.yMax = centerY + halfY;
     refreshWindowScales();
+    invalidateGraphViewportOnly();
     requestRender();
 }
 
 void GraphApp::resetWindow() {
     m_window = DEFAULT_WINDOW;
     refreshWindowScales();
+    invalidateGraphViewportOnly();
     requestRender();
 }
 
@@ -483,6 +511,7 @@ void GraphApp::startTrace(int direction) {
     if (enabled < 0) {
         m_traceHasPoint = false;
         m_mode = GraphMode::Trace;
+        invalidateGraphViewportOnly();
         requestRender();
         return;
     }
@@ -493,6 +522,7 @@ void GraphApp::startTrace(int direction) {
     if (!m_traceHasPoint) {
         moveTrace(direction >= 0 ? 1 : -1);
     }
+    invalidateGraphViewportOnly();
     requestRender();
 }
 
@@ -513,6 +543,7 @@ void GraphApp::moveTrace(int direction) {
             break;
         }
     }
+    invalidateGraphViewportOnly();
     requestRender();
 }
 
@@ -526,6 +557,7 @@ void GraphApp::cycleTraceFunction(int direction) {
     if (!m_traceHasPoint) {
         moveTrace(direction >= 0 ? 1 : -1);
     }
+    invalidateGraphViewportOnly();
     requestRender();
 }
 
@@ -723,4 +755,32 @@ void GraphApp::renderTraceOverlay(Display& display,
                   m_traceY);
     display.fillRect(x + 6, y + 6, w - 12, 14, COLOR_PANEL);
     drawTextFit(display, label, x + 10, y + 9, w - 20, COLOR_TEXT);
+}
+
+DisplayRect GraphApp::contentBounds() const {
+    return m_contentBounds;
+}
+
+DisplayRect GraphApp::graphViewportRect() const {
+    const DisplayRect bounds = contentBounds();
+    const int footerHeight = 36;
+    return {bounds.x + 6, bounds.y + 6, bounds.w - 12, bounds.h - footerHeight - 8};
+}
+
+DisplayRect GraphApp::graphFooterRect() const {
+    const DisplayRect bounds = contentBounds();
+    return {bounds.x, bounds.y + bounds.h - 36, bounds.w, 36};
+}
+
+void GraphApp::invalidateRect(DisplayRect rect) {
+    m_dirtyRegions.add(rect);
+}
+
+void GraphApp::invalidateContent() {
+    invalidateRect(contentBounds());
+}
+
+void GraphApp::invalidateGraphViewportOnly() {
+    invalidateRect(graphViewportRect());
+    invalidateRect(graphFooterRect());
 }

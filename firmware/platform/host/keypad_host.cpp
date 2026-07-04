@@ -20,10 +20,24 @@ void KeypadHost::handleEvent(const SDL_Event &event) {
             m_shiftHeld = true;
             return;
         }
+        if (event.key.keysym.sym == SDLK_LCTRL ||
+            event.key.keysym.sym == SDLK_RCTRL ||
+            event.key.keysym.sym == SDLK_LALT ||
+            event.key.keysym.sym == SDLK_RALT) {
+            m_alphaHeld = true;
+            return;
+        }
     }
     if (event.type == SDL_KEYUP) {
         if (event.key.keysym.sym == SDLK_LSHIFT || event.key.keysym.sym == SDLK_RSHIFT) {
             m_shiftHeld = false;
+            return;
+        }
+        if (event.key.keysym.sym == SDLK_LCTRL ||
+            event.key.keysym.sym == SDLK_RCTRL ||
+            event.key.keysym.sym == SDLK_LALT ||
+            event.key.keysym.sym == SDLK_RALT) {
+            m_alphaHeld = false;
             return;
         }
     }
@@ -66,4 +80,14 @@ void KeypadHost::handleEvent(const SDL_Event &event) {
         case SDLK_h:        m_currentKey = Key::HOME;     break;
         default: break;
     }
+}
+
+InputLayer KeypadHost::activeLayer() const {
+    if (m_alphaHeld) {
+        return InputLayer::Alpha;
+    }
+    if (m_shiftHeld) {
+        return InputLayer::Second;
+    }
+    return InputLayer::Base;
 }
