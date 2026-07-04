@@ -55,7 +55,8 @@ constexpr uint16_t X_OFFSET = 0;
 constexpr uint16_t Y_OFFSET = 0;
 
 // Conservative default for bring-up. Raise after signal-integrity validation.
-constexpr uint32_t SPI_FREQUENCY_HZ = 10000000;
+constexpr uint32_t LCD_SPI_BAUDRATE = 10000000;
+constexpr bool LCD_LOG_TIMING = true;
 
 // ILI9488 SPI write path is configured for 18-bit pixel transfer (RGB666 payload).
 constexpr uint8_t COLMOD_16BIT = 0x55;
@@ -118,6 +119,7 @@ private:
     static constexpr uint8_t CMD_ADJCTRL3 = 0xF7;
 
     static constexpr int PIXELS_PER_FILL_CHUNK = 64;
+    static constexpr int ROWS_PER_WRITE_CHUNK = 4;
 
     spi_inst_t* m_spi;
     uint m_pin_cs;
@@ -127,7 +129,7 @@ private:
     uint m_pin_mosi;
     uint m_pin_bl;
 
-    std::array<uint8_t, ili9488_config::LANDSCAPE_WIDTH * 3> m_rowBuffer{};
+    std::array<uint8_t, ili9488_config::LANDSCAPE_WIDTH * ROWS_PER_WRITE_CHUNK * 3> m_rowBuffer{};
 
     void sendCommand(uint8_t cmd);
     void sendData(const uint8_t* data, std::size_t length);

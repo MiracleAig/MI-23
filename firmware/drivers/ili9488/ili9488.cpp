@@ -7,7 +7,13 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "pico/time.h"
+
 namespace {
+
+constexpr int FULL_SCREEN_PIXELS =
+    ili9488_config::LANDSCAPE_WIDTH * ili9488_config::LANDSCAPE_HEIGHT;
+constexpr int TIMING_LOG_MIN_PIXELS = 4096;
 
 inline uint8_t highByte(uint16_t value) {
     return static_cast<uint8_t>(value >> 8);
@@ -28,6 +34,33 @@ inline uint16_t transportColor(uint16_t color) {
         return rgb565_to_bgr565(color);
     }
     return color;
+}
+
+uint32_t elapsedUs(uint32_t startUs) {
+    return time_us_32() - startUs;
+}
+
+void logPixelPushTiming(const char* op, int x, int y, int w, int h, uint32_t us) {
+    if (!ili9488_config::LCD_LOG_TIMING) {
+        return;
+    }
+
+    const int pixels = w * h;
+    if (pixels < TIMING_LOG_MIN_PIXELS && pixels < FULL_SCREEN_PIXELS) {
+        return;
+    }
+
+    std::printf("[display] %s x=%d y=%d w=%d h=%d pixels=%d spi=%lu Hz time=%lu us (%lu ms)%s\n",
+                op,
+                x,
+                y,
+                w,
+                h,
+                pixels,
+                static_cast<unsigned long>(ili9488_config::LCD_SPI_BAUDRATE),
+                static_cast<unsigned long>(us),
+                static_cast<unsigned long>((us + 500) / 1000),
+                pixels >= FULL_SCREEN_PIXELS ? " full-screen" : "");
 }
 
 } // namespace
@@ -65,13 +98,13 @@ void ILI9488::init() {
                 m_pin_rst,
                 m_pin_bl);
 
-    spi_init(m_spi, ili9488_config::SPI_FREQUENCY_HZ);
+    spi_init(m_spi, ili9488_config::LCD_SPI_BAUDRATE);
     spi_set_format(m_spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
     gpio_set_function(m_pin_sck, GPIO_FUNC_SPI);
     gpio_set_function(m_pin_mosi, GPIO_FUNC_SPI);
-    std::printf("[display] spi pins configured and clock set to %u Hz\n",
-                ili9488_config::SPI_FREQUENCY_HZ);
+    std::printf("[display] spi pins configured and clock set to %lu Hz\n",
+                static_cast<unsigned long>(ili9488_config::LCD_SPI_BAUDRATE));
 
     gpio_init(m_pin_cs);
     gpio_init(m_pin_dc);
@@ -283,6 +316,7 @@ void ILI9488::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t colo
               static_cast<uint16_t>(x + w - 1),
               static_cast<uint16_t>(y + h - 1));
 
+    const uint32_t startUs = time_us_32();
     uint8_t chunk[PIXELS_PER_FILL_CHUNK * 3];
     const bool use18Bit = use18BitPixelTransfer();
     const int bytesPerPixel = use18Bit ? 3 : 2;
@@ -319,6 +353,12 @@ void ILI9488::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t colo
     }
 
     csHigh();
+    logPixelPushTiming("fillRect",
+                       x,
+                       y,
+                       w,
+                       h,
+                       elapsedUs(startUs));
 }
 
 void ILI9488::writeRect(int16_t x,
@@ -342,36 +382,49 @@ void ILI9488::writeRect(int16_t x,
               static_cast<uint16_t>(x + w - 1),
               static_cast<uint16_t>(y + h - 1));
 
+    const uint32_t startUs = time_us_32();
     const bool use18Bit = use18BitPixelTransfer();
-    for (int row = 0; row < h; ++row) {
-        const uint16_t* src = pixels + row * sourceStridePixels;
+    const int bytesPerPixel = use18Bit ? 3 : 2;
+    for (int row = 0; row < h; row += ROWS_PER_WRITE_CHUNK) {
+        const int batchRows = std::min<int>(ROWS_PER_WRITE_CHUNK, h - row);
 
         if (use18Bit) {
-            for (int col = 0; col < w; ++col) {
-                uint8_t r = 0;
-                uint8_t g = 0;
-                uint8_t b = 0;
-                rgb565ToRgb888(transportColor(src[col]), r, g, b);
+            for (int batchRow = 0; batchRow < batchRows; ++batchRow) {
+                const uint16_t* src = pixels + (row + batchRow) * sourceStridePixels;
+                for (int col = 0; col < w; ++col) {
+                    uint8_t r = 0;
+                    uint8_t g = 0;
+                    uint8_t b = 0;
+                    rgb565ToRgb888(transportColor(src[col]), r, g, b);
 
-                const int base = col * 3;
-                m_rowBuffer[base] = r;
-                m_rowBuffer[base + 1] = g;
-                m_rowBuffer[base + 2] = b;
+                    const int base = (batchRow * w + col) * 3;
+                    m_rowBuffer[base] = r;
+                    m_rowBuffer[base + 1] = g;
+                    m_rowBuffer[base + 2] = b;
+                }
             }
-            spi_write_blocking(m_spi, m_rowBuffer.data(), w * 3);
         } else {
-            for (int col = 0; col < w; ++col) {
-                const uint16_t value = transportColor(src[col]);
-                const int base = col * 2;
-                // RGB565 on SPI must be sent high byte first, low byte second.
-                m_rowBuffer[base] = highByte(value);
-                m_rowBuffer[base + 1] = lowByte(value);
+            for (int batchRow = 0; batchRow < batchRows; ++batchRow) {
+                const uint16_t* src = pixels + (row + batchRow) * sourceStridePixels;
+                for (int col = 0; col < w; ++col) {
+                    const uint16_t value = transportColor(src[col]);
+                    const int base = (batchRow * w + col) * 2;
+                    // RGB565 on SPI must be sent high byte first, low byte second.
+                    m_rowBuffer[base] = highByte(value);
+                    m_rowBuffer[base + 1] = lowByte(value);
+                }
             }
-            spi_write_blocking(m_spi, m_rowBuffer.data(), w * 2);
         }
+        spi_write_blocking(m_spi, m_rowBuffer.data(), w * batchRows * bytesPerPixel);
     }
 
     csHigh();
+    logPixelPushTiming("writeRect",
+                       x,
+                       y,
+                       w,
+                       h,
+                       elapsedUs(startUs));
 }
 
 void ILI9488::fillScreen(uint16_t color) {

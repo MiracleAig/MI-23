@@ -25,6 +25,25 @@ public:
     }
 };
 
+class FractionTrackingDisplay : public NullDisplay {
+public:
+    struct Rect {
+        int x;
+        int y;
+        int w;
+        int h;
+    };
+
+    Rect rects[256] = {};
+    int rectCount = 0;
+
+    void fillRect(int x, int y, int w, int h, Color) override {
+        if (rectCount < static_cast<int>(sizeof(rects) / sizeof(rects[0]))) {
+            rects[rectCount++] = {x, y, w, h};
+        }
+    }
+};
+
 TEST(MathTypeset, MeasuresPlainRow) {
     math_typeset::LayoutMetrics metrics{};
     EXPECT_TRUE(math_typeset::measure("2+3", metrics));
@@ -49,6 +68,58 @@ TEST(MathTypeset, FractionHasBothAscentAndDescent) {
 
     EXPECT_GT(metrics.ascent, 7);
     EXPECT_GT(metrics.descent, 1);
+}
+
+TEST(MathTypeset, DrawFractionUsesStackedDisplayPrimitives) {
+    constexpr int originX = 10;
+    constexpr int baselineY = 30;
+    FractionTrackingDisplay display;
+    math_typeset::LayoutMetrics metrics{};
+
+    ASSERT_TRUE(math_typeset::draw("12/3",
+                                   display,
+                                   originX,
+                                   baselineY,
+                                   Display::WHITE,
+                                   &metrics));
+
+    bool foundFractionBar = false;
+    bool foundNumeratorPixels = false;
+    bool foundDenominatorPixels = false;
+
+    for (int i = 0; i < display.rectCount; ++i) {
+        const auto& rect = display.rects[i];
+        if (rect.x == originX &&
+            rect.y == baselineY &&
+            rect.w == metrics.width &&
+            rect.h == 1) {
+            foundFractionBar = true;
+            continue;
+        }
+
+        if (rect.y + rect.h <= baselineY) {
+            foundNumeratorPixels = true;
+        }
+        if (rect.y > baselineY) {
+            foundDenominatorPixels = true;
+        }
+    }
+
+    EXPECT_TRUE(foundFractionBar);
+    EXPECT_TRUE(foundNumeratorPixels);
+    EXPECT_TRUE(foundDenominatorPixels);
+}
+
+TEST(MathTypeset, InProgressFractionKeepsStackedLayout) {
+    math_typeset::LayoutMetrics metrics{};
+    math_typeset::CursorMetrics cursor{};
+
+    ASSERT_TRUE(math_typeset::measure("1/", metrics));
+    ASSERT_TRUE(math_typeset::cursorMetrics("1/", 2, 1.0f, cursor));
+
+    EXPECT_GT(metrics.ascent, 7);
+    EXPECT_GT(metrics.descent, 1);
+    EXPECT_GT(cursor.baselineOffset, 0);
 }
 
 TEST(MathTypeset, SquareRootRendersAsRadicalBox) {

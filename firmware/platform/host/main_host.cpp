@@ -13,6 +13,7 @@
 #include "app/graphing/graph_app.h"
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
+#include "app/ui/title_bar.h"
 #include "hal/system_time.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
@@ -25,23 +26,8 @@ CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings) {
     return config;
 }
 
-const uint16_t COLOR_BG = Display::rgb(8, 10, 14);
-const uint16_t COLOR_HEADER = Display::rgb(22, 35, 48);
-const uint16_t COLOR_MUTED = Display::rgb(150, 160, 172);
-
-void drawHeader(Display& display, const char* title) {
-    display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
-    display.drawText(title, 8, 7, Display::WHITE);
-    display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
-                     COLOR_MUTED);
-}
-
-void drawHomeHeader(Display& display) {
-    display.fillRect(0, 0, DISPLAY_WIDTH, 22, COLOR_HEADER);
-    display.drawText("MI-23 Home", 8, 7, Display::WHITE);
-    display.drawText("Home", DISPLAY_WIDTH - Display::textWidth("Home") - 8, 7,
-                     COLOR_MUTED);
-}
+static constexpr int CONTENT_Y = SystemTitleBar::kHeight;
+static constexpr int CONTENT_H = DISPLAY_HEIGHT - CONTENT_Y;
 
 class HostAppController {
 public:
@@ -60,6 +46,9 @@ public:
         , m_activeApp(AppId::Boot)
         , m_needsFrame(true)
         , m_shellDirty(true)
+        , m_titleBar()
+        , m_status()
+        , m_renderedStatus()
     {}
 
     void init() {
@@ -104,6 +93,10 @@ public:
 
             m_keypad.handleEvent(event);
         }
+
+        if (syncStatus()) {
+            m_needsFrame = true;
+        }
     }
 
     void update() {
@@ -129,24 +122,19 @@ public:
         m_display.setPresentEnabled(false);
 
         if (m_activeApp == AppId::Home) {
-            if (m_shellDirty) {
-                drawHomeHeader(m_display);
-            }
-            m_home.renderContent(22, DISPLAY_HEIGHT - 22);
+            drawSystemTitleBar();
+            m_home.renderContent(CONTENT_Y, CONTENT_H);
         } else if (m_activeApp == AppId::Boot) {
             m_boot.render();
         } else if (m_activeApp == AppId::Calculator) {
-            m_calculator.render();
+            drawSystemTitleBar();
+            m_calculator.renderContent(CONTENT_Y, CONTENT_H);
         } else if (m_activeApp == AppId::Graphing) {
-            if (m_shellDirty) {
-                drawHeader(m_display, "Graphing");
-            }
-            m_graph.renderContent(m_display, 0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
+            drawSystemTitleBar();
+            m_graph.renderContent(m_display, 0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
         } else if (m_activeApp == AppId::Settings) {
-            if (m_shellDirty) {
-                drawHeader(m_display, "Settings");
-            }
-            m_settingsApp.renderContent(0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22);
+            drawSystemTitleBar();
+            m_settingsApp.renderContent(0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
         }
 
         if (m_activeApp != AppId::Boot) {
@@ -175,6 +163,9 @@ private:
     AppId m_activeApp;
     bool m_needsFrame;
     bool m_shellDirty;
+    SystemTitleBar m_titleBar;
+    SystemStatusState m_status;
+    SystemStatusState m_renderedStatus;
 
     void dispatchKey(Key key) {
         if (m_activeApp == AppId::Boot) {
@@ -202,6 +193,30 @@ private:
         }
         if (key != Key::NONE) {
             m_needsFrame = true;
+        }
+        if (syncStatus()) {
+            m_needsFrame = true;
+        }
+    }
+
+    bool syncStatus() {
+        const SystemStatusState before = m_status;
+        m_status.setAppTitle(appTitleForId(m_activeApp));
+        m_status.setBatteryPercentage(SystemStatusState::kDefaultBatteryPercentage);
+        m_status.setAngleMode(m_settings.angleMode);
+        m_status.setInputLayer(m_keypad.activeLayer());
+        return before != m_status;
+    }
+
+    void drawSystemTitleBar() {
+        if (m_activeApp == AppId::Boot) {
+            return;
+        }
+
+        syncStatus();
+        if (m_shellDirty || m_status != m_renderedStatus) {
+            m_titleBar.render(m_display, m_status);
+            m_renderedStatus = m_status;
         }
     }
 

@@ -105,7 +105,8 @@ SettingsApp::SettingsApp(Display& display,
     , m_developerIndex(0)
     , m_dirty(false)
     , m_saveRequested(false)
-    , m_needsRender(true) {}
+    , m_needsRender(true)
+    , m_contentBounds{0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22} {}
 
 void SettingsApp::enter() {
     m_screen = Screen::Main;
@@ -156,8 +157,14 @@ bool SettingsApp::handleKey(Key key) {
             toggleDeveloperSelected();
         }
         if (oldDeveloperIndex != m_developerIndex) {
-            invalidateRect(developerRowRect(0, 22, DISPLAY_WIDTH, oldDeveloperIndex));
-            invalidateRect(developerRowRect(0, 22, DISPLAY_WIDTH, m_developerIndex));
+            invalidateRect(developerRowRect(m_contentBounds.x,
+                                            m_contentBounds.y,
+                                            m_contentBounds.w,
+                                            oldDeveloperIndex));
+            invalidateRect(developerRowRect(m_contentBounds.x,
+                                            m_contentBounds.y,
+                                            m_contentBounds.w,
+                                            m_developerIndex));
         }
         requestRender();
         return false;
@@ -208,6 +215,13 @@ bool SettingsApp::handleKey(Key key) {
 }
 
 void SettingsApp::renderContent(int x, int y, int w, int h) {
+    if (m_contentBounds.x != x || m_contentBounds.y != y ||
+        m_contentBounds.w != w || m_contentBounds.h != h) {
+        m_contentBounds = {x, y, w, h};
+        invalidateRect(m_contentBounds);
+        requestRender();
+    }
+
     if (!m_needsRender) {
         return;
     }
@@ -457,7 +471,7 @@ void SettingsApp::invalidateRect(DisplayRect rect) {
 }
 
 void SettingsApp::invalidateContent() {
-    invalidateRect({0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22});
+    invalidateRect(m_contentBounds);
 }
 
 DisplayRect SettingsApp::mainRowRect(int x, int y, int w, int index) const {

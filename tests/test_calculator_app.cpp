@@ -16,13 +16,69 @@ public:
     void present() override {}
 };
 
+class CalculatorClipTrackingDisplay : public Display {
+public:
+    static constexpr int TitleBarHeight = 22;
+
+    void init() override {}
+
+    void clear(Color color) override {
+        DisplayRect rect{0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT};
+        if (!clipRect(rect)) {
+            return;
+        }
+        record(rect);
+        (void)color;
+    }
+
+    void drawPixel(int x, int y, Color color) override {
+        if (!clipPoint(x, y)) {
+            return;
+        }
+        record({x, y, 1, 1});
+        (void)color;
+    }
+
+    void fillRect(int x, int y, int w, int h, Color color) override {
+        DisplayRect rect{x, y, w, h};
+        if (!clipRect(rect)) {
+            return;
+        }
+        record(rect);
+        (void)color;
+    }
+
+    void drawText(const char* text, int x, int y, Color color) override {
+        if (!text) {
+            return;
+        }
+        DisplayRect rect{x, y, Display::textWidth(text), FONT_CHAR_HEIGHT};
+        if (!clipRect(rect)) {
+            return;
+        }
+        record(rect);
+        (void)color;
+    }
+
+    void present() override {}
+
+    bool wroteAboveTitleBar = false;
+
+private:
+    void record(DisplayRect rect) {
+        if (rect.y < TitleBarHeight) {
+            wroteAboveTitleBar = true;
+        }
+    }
+};
+
 class CalculatorNullKeypad : public Keypad {
 public:
     void init() override {}
     Key getKey() override { return Key::NONE; }
 };
 
-static CalculatorApp makeCalculator(CalculatorNullDisplay& display,
+static CalculatorApp makeCalculator(Display& display,
                                     CalculatorNullKeypad& keypad) {
     CalculatorAppConfig config{};
     config.showOnScreenKeypad = false;
@@ -37,6 +93,18 @@ TEST(CalculatorAppPointerInput, HiddenOnScreenKeypadDoesNotAcceptClicks) {
     app.handlePointerDown(BTN_MARGIN + 1, BTN_AREA_TOP + BTN_MARGIN + 1);
 
     EXPECT_STREQ(app.input(), "");
+}
+
+TEST(CalculatorAppRendering, ContentRenderDiscardsStaleFullScreenDirtyRect) {
+    CalculatorClipTrackingDisplay display;
+    CalculatorNullKeypad keypad;
+    CalculatorApp app = makeCalculator(display, keypad);
+
+    app.requestRender();
+    app.renderContent(CalculatorClipTrackingDisplay::TitleBarHeight,
+                      DISPLAY_HEIGHT - CalculatorClipTrackingDisplay::TitleBarHeight);
+
+    EXPECT_FALSE(display.wroteAboveTitleBar);
 }
 
 TEST(CalculatorAppPointerInput, VisibleOnScreenKeypadAcceptsClicks) {

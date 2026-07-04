@@ -13,6 +13,7 @@ enum class AppId {
     Calculator,
     Graphing,
     Settings,
+    Matrix,
 };
 
 class HomeScreen {
@@ -28,11 +29,14 @@ public:
 private:
     Display& m_display;
     int m_selectedIndex;
+    int m_contentY;
+    int m_contentHeight;
     bool m_needsRender;
     DirtyRegionList m_dirtyRegions;
 
     void renderContentArea(int contentY, int contentHeight);
     void invalidateContent(int contentY, int contentHeight);
+    void invalidateSelectionChange(int oldIndex, int newIndex);
     void moveSelection(int deltaCol, int deltaRow);
     void invalidateRect(DisplayRect rect);
 };

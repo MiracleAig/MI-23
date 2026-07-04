@@ -10,6 +10,7 @@
 #include "app/home/calculator_home.h"
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
+#include "app/ui/title_bar.h"
 #include "display_rp2350.h"
 #include "hal/system_time.h"
 #include "keypad_rp2350_2.h"
@@ -23,13 +24,8 @@ namespace {
 
 static constexpr int SCREEN_W = DISPLAY_WIDTH;
 static constexpr int SCREEN_H = DISPLAY_HEIGHT;
-static constexpr int HEADER_HEIGHT = 22;
-static constexpr int CONTENT_Y = HEADER_HEIGHT;
-static constexpr int CONTENT_H = SCREEN_H - HEADER_HEIGHT;
-
-const uint16_t COLOR_HEADER_BG = Display::rgb(22, 35, 48);
-const uint16_t COLOR_HEADER_TEXT = Display::WHITE;
-const uint16_t COLOR_HEADER_MUTED = Display::rgb(150, 160, 172);
+static constexpr int CONTENT_Y = SystemTitleBar::kHeight;
+static constexpr int CONTENT_H = SCREEN_H - CONTENT_Y;
 
 CalculatorAppConfig rpCalculatorConfig(const SettingsState& settings) {
     CalculatorAppConfig config;
@@ -63,52 +59,6 @@ private:
     Keypad& m_secondary;
 };
 
-const char* appTitle(AppId app) {
-    switch (app) {
-        case AppId::Home: return "Home";
-        case AppId::Calculator: return "Calculator";
-        case AppId::Graphing: return "Graphing";
-        case AppId::Settings: return "Settings";
-        default: return "";
-    }
-}
-
-int getBatteryLevel() {
-    return 100;
-}
-
-void drawBatteryIndicator(DisplayRP2350& display) {
-    const int level = getBatteryLevel();
-    char label[8] = {};
-    std::snprintf(label, sizeof(label), "%d%%", level);
-
-    const int labelX = SCREEN_W - Display::textWidth(label) - 6;
-    const int iconW = 24;
-    const int iconH = 10;
-    const int iconX = labelX - iconW - 5;
-    const int iconY = (HEADER_HEIGHT - iconH) / 2;
-    const int fillW = (iconW - 4) * level / 100;
-
-    display.fillRect(iconX, iconY, iconW, 1, COLOR_HEADER_TEXT);
-    display.fillRect(iconX, iconY + iconH - 1, iconW, 1, COLOR_HEADER_TEXT);
-    display.fillRect(iconX, iconY, 1, iconH, COLOR_HEADER_TEXT);
-    display.fillRect(iconX + iconW - 1, iconY, 1, iconH, COLOR_HEADER_TEXT);
-    display.fillRect(iconX + iconW, iconY + 3, 2, 4, COLOR_HEADER_TEXT);
-    display.fillRect(iconX + 2, iconY + 2, fillW, iconH - 4, Display::GREEN);
-    display.drawText(label, labelX, 7, COLOR_HEADER_TEXT);
-}
-
-void drawGlobalHeader(DisplayRP2350& display, AppId app, const SettingsState& settings) {
-    display.fillRect(0, 0, SCREEN_W, HEADER_HEIGHT, COLOR_HEADER_BG);
-    display.drawText(appTitle(app), 8, 7, COLOR_HEADER_TEXT);
-    const char* angleLabel = settings.angleMode == AngleMode::Degrees ? "DEG" : "RAD";
-    display.drawText(angleLabel,
-                     SCREEN_W / 2 - Display::textWidth(angleLabel) / 2,
-                     7,
-                     COLOR_HEADER_MUTED);
-    drawBatteryIndicator(display);
-}
-
 class RP2350AppController {
 public:
     RP2350AppController(DisplayRP2350& display,
@@ -131,7 +81,9 @@ public:
         , m_activeApp(AppId::Boot)
         , m_waitingForRelease(false)
         , m_shellDirty(true)
-        , m_lastHeaderAngleMode(settings.angleMode) {}
+        , m_titleBar()
+        , m_status()
+        , m_renderedStatus() {}
 
     void init() {
         m_display.init();
@@ -176,7 +128,7 @@ public:
                 launch(launchTarget);
             } else if (m_home.needsRender()) {
                 drawCurrentShell();
-                m_home.renderContent(CONTENT_Y, CONTENT_H);
+                renderHomeContent("navigation");
             }
             return;
         }
@@ -187,7 +139,8 @@ public:
             if (blinkChanged && m_settings.developer.inputEventLogs) {
                 std::printf("[render] rp2350 blink toggled; render requested\n");
             }
-            m_calculator.render();
+            drawCurrentShell();
+            m_calculator.renderContent(CONTENT_Y, CONTENT_H);
             return;
         }
 
@@ -227,19 +180,29 @@ private:
     AppId m_activeApp;
     bool m_waitingForRelease;
     bool m_shellDirty;
-    AngleMode m_lastHeaderAngleMode;
+    SystemTitleBar m_titleBar;
+    SystemStatusState m_status;
+    SystemStatusState m_renderedStatus;
 
     void drawCurrentShell() {
-        if (m_activeApp == AppId::Calculator || m_activeApp == AppId::Boot) {
+        if (m_activeApp == AppId::Boot) {
             return;
         }
-        if (!m_shellDirty && m_lastHeaderAngleMode == m_settings.angleMode) {
+        syncStatus();
+        if (!m_shellDirty && m_status == m_renderedStatus) {
             return;
         }
 
-        drawGlobalHeader(m_display, m_activeApp, m_settings);
-        m_lastHeaderAngleMode = m_settings.angleMode;
+        m_titleBar.render(m_display, m_status);
+        m_renderedStatus = m_status;
         m_shellDirty = false;
+    }
+
+    void syncStatus() {
+        m_status.setAppTitle(appTitleForId(m_activeApp));
+        m_status.setBatteryPercentage(SystemStatusState::kDefaultBatteryPercentage);
+        m_status.setAngleMode(m_settings.angleMode);
+        m_status.setInputLayer(InputLayer::Base);
     }
 
     void finishBoot() {
@@ -247,7 +210,7 @@ private:
         m_activeApp = AppId::Home;
         m_shellDirty = true;
         drawCurrentShell();
-        m_home.renderContent(CONTENT_Y, CONTENT_H);
+        renderHomeContent("boot-finish");
     }
 
     void goHome() {
@@ -257,7 +220,7 @@ private:
             m_activeApp = AppId::Home;
             m_shellDirty = true;
             drawCurrentShell();
-            m_home.renderContent(CONTENT_Y, CONTENT_H);
+            renderHomeContent("home");
         }
     }
 
@@ -276,9 +239,11 @@ private:
     void launch(AppId app) {
         if (app == AppId::Calculator) {
             m_activeApp = AppId::Calculator;
+            m_shellDirty = true;
             m_calculator.requestRender();
             m_calculator.updateBlink(systemTimeMs());
-            m_calculator.render();
+            drawCurrentShell();
+            m_calculator.renderContent(CONTENT_Y, CONTENT_H);
             return;
         }
 
@@ -300,6 +265,16 @@ private:
             m_settingsApp.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
             m_display.present();
         }
+    }
+
+    void renderHomeContent(const char* reason) {
+        const uint32_t startUs = time_us_32();
+        m_home.renderContent(CONTENT_Y, CONTENT_H);
+        const uint32_t us = time_us_32() - startUs;
+        std::printf("[render] home content reason=%s time=%lu us (%lu ms)\n",
+                    reason,
+                    static_cast<unsigned long>(us),
+                    static_cast<unsigned long>((us + 500) / 1000));
     }
 };
 

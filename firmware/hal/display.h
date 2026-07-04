@@ -161,6 +161,64 @@ public:
     virtual void drawText(const char* text, int x, int y, Color color) = 0;
     virtual void present() = 0; // Push updates to the screen
 
+    void drawGlyphScaled(unsigned char c, int x, int y, Color color, float scale) {
+        const uint8_t* glyph = &FONT_DATA[c * FONT_CHAR_WIDTH];
+        const int pixelSize = scaleLength(1, scale);
+
+        for (int col = 0; col < FONT_CHAR_WIDTH; ++col) {
+            const uint8_t columnBits = glyph[col];
+            for (int row = 0; row < FONT_CHAR_HEIGHT; ++row) {
+                if (((columnBits >> row) & 1U) == 0) {
+                    continue;
+                }
+
+                fillRect(x + scaleLength(col, scale),
+                         y + scaleLength(row, scale),
+                         pixelSize,
+                         pixelSize,
+                         color);
+            }
+        }
+    }
+
+    void drawTextScaled(const char* text, int x, int y, Color color, float scale) {
+        if (!text) {
+            return;
+        }
+
+        drawTextSliceScaled(text, 0, stringLength(text), x, y, color, scale);
+    }
+
+    void drawTextSliceScaled(const char* text,
+                             int start,
+                             int length,
+                             int x,
+                             int y,
+                             Color color,
+                             float scale) {
+        if (!text || start < 0 || length <= 0) {
+            return;
+        }
+
+        const int textLength = stringLength(text);
+        if (start >= textLength) {
+            return;
+        }
+        const int remainingLength = textLength - start;
+        length = length < remainingLength ? length : remainingLength;
+
+        int cursorX = x;
+        const int advance = scaleLength(FONT_CHAR_ADVANCE, scale);
+        for (int i = 0; i < length; ++i) {
+            drawGlyphScaled(static_cast<unsigned char>(text[start + i]),
+                            cursorX,
+                            y,
+                            color,
+                            scale);
+            cursorX += advance;
+        }
+    }
+
     void setClipRect(DisplayRect rect) {
         if (!clipRect(rect)) {
             m_hasClipRect = true;
@@ -230,11 +288,7 @@ public:
     }
 
     static int textWidth(const char* text) {
-        int len = 0;
-        while (text[len] != '\0') {
-            len++;
-        }
-        return len * FONT_CHAR_ADVANCE;
+        return stringLength(text) * FONT_CHAR_ADVANCE;
     }
 
 
@@ -281,5 +335,28 @@ private:
 
     static constexpr int absInt(int value) {
         return value < 0 ? -value : value;
+    }
+
+    static int scaleLength(int value, float scale) {
+        if (value <= 0) {
+            return 0;
+        }
+
+        const float scaled = static_cast<float>(value) * scale;
+        const int truncated = static_cast<int>(scaled);
+        const int roundedUp = truncated >= scaled ? truncated : truncated + 1;
+        return roundedUp > 1 ? roundedUp : 1;
+    }
+
+    static int stringLength(const char* text) {
+        if (!text) {
+            return 0;
+        }
+
+        int len = 0;
+        while (text[len] != '\0') {
+            len++;
+        }
+        return len;
     }
 };

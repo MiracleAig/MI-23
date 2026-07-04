@@ -8,6 +8,20 @@
 #include "platform/rp2350/config/pin_config.h"
 
 #include <algorithm>
+#include <cstdio>
+
+#include "pico/time.h"
+
+namespace {
+
+constexpr bool DISPLAY_RP2350_LOG_TIMING = true;
+constexpr int FULL_SCREEN_PIXELS = DISPLAY_WIDTH * DISPLAY_HEIGHT;
+
+uint32_t elapsedUs(uint32_t startUs) {
+    return time_us_32() - startUs;
+}
+
+} // namespace
 
 DisplayRP2350::DisplayRP2350()
     : m_display(spi1,
@@ -36,12 +50,20 @@ void DisplayRP2350::clear(Color color) {
         return;
     }
 
+    const uint32_t startUs = time_us_32();
     const uint16_t value = color.rgb565();
     for (int row = 0; row < rect.h; ++row) {
         uint16_t* line = &m_framebuffer[static_cast<std::size_t>((rect.y + row) *
                                                                  DISPLAY_WIDTH +
                                                                  rect.x)];
         std::fill(line, line + rect.w, value);
+    }
+    if (DISPLAY_RP2350_LOG_TIMING && rect.w * rect.h == FULL_SCREEN_PIXELS) {
+        const uint32_t us = elapsedUs(startUs);
+        std::printf("[display] framebuffer clear full-screen pixels=%d time=%lu us (%lu ms)\n",
+                    FULL_SCREEN_PIXELS,
+                    static_cast<unsigned long>(us),
+                    static_cast<unsigned long>((us + 500) / 1000));
     }
     markDirty(rect);
 }
@@ -129,8 +151,13 @@ void DisplayRP2350::present() {
         return;
     }
 
-    for (int i = 0; i < m_presentRegions.count(); ++i) {
+    const uint32_t startUs = time_us_32();
+    const int regionCount = m_presentRegions.count();
+    int totalPixels = 0;
+
+    for (int i = 0; i < regionCount; ++i) {
         const DisplayRect rect = m_presentRegions.rect(i);
+        totalPixels += rect.w * rect.h;
         const uint16_t* pixels = &m_framebuffer[static_cast<std::size_t>(rect.y *
                                                                          DISPLAY_WIDTH +
                                                                          rect.x)];
@@ -140,6 +167,16 @@ void DisplayRP2350::present() {
                             rect.h,
                             pixels,
                             DISPLAY_WIDTH);
+    }
+
+    if (DISPLAY_RP2350_LOG_TIMING) {
+        const uint32_t us = elapsedUs(startUs);
+        std::printf("[display] present rects=%d pixels=%d time=%lu us (%lu ms)%s\n",
+                    regionCount,
+                    totalPixels,
+                    static_cast<unsigned long>(us),
+                    static_cast<unsigned long>((us + 500) / 1000),
+                    totalPixels >= FULL_SCREEN_PIXELS ? " full-screen" : "");
     }
 
     m_presentRegions.clear();

@@ -379,7 +379,9 @@ static int parseTerm(Context& ctx) {
         if (c == '/') {
             const int slashIndex = ctx.cursor;
             ctx.cursor++;
-            const int rhs = parsePower(ctx);
+            const int rhs = (ctx.cursor >= ctx.length)
+                ? makeTextNode(ctx, ctx.cursor, 0)
+                : parsePower(ctx);
             const int fraction = addNode(ctx, Node::Type::Fraction);
             if (fraction < 0) {
                 return -1;
@@ -720,30 +722,6 @@ static int layoutNode(const Context& parseCtx, int nodeIndex, LayoutContext& lay
     return -1;
 }
 
-static void drawCharScaled(Display& display,
-                           unsigned char c,
-                           int x,
-                           int y,
-                           uint16_t color,
-                           float scale) {
-    const uint8_t* glyph = &FONT_DATA[c * FONT_CHAR_WIDTH];
-    for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
-        const uint8_t columnBits = glyph[col];
-        for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-            if ((columnBits >> row) & 1U) {
-                const int scaledX = x + scaleLength(col, scale);
-                const int scaledY = y + scaleLength(row, scale);
-                const int pixelSize = std::max(1, scaleLength(1, scale));
-                display.fillRect(scaledX, scaledY, pixelSize, pixelSize, color);
-            }
-        }
-    }
-}
-
-static void drawChar(Display& display, unsigned char c, int x, int y, uint16_t color) {
-    drawCharScaled(display, c, x, y, color, 1.0f);
-}
-
 static void drawTallParen(Display& display,
                           bool leftParen,
                           int x,
@@ -752,12 +730,11 @@ static void drawTallParen(Display& display,
                           uint16_t color,
                           float scale) {
     if (height <= scaleLength(FONT_CHAR_HEIGHT, scale) + 1) {
-        drawCharScaled(display,
-                       static_cast<unsigned char>(leftParen ? '(' : ')'),
-                       x,
-                       top,
-                       color,
-                       scale);
+        display.drawGlyphScaled(static_cast<unsigned char>(leftParen ? '(' : ')'),
+                                x,
+                                top,
+                                color,
+                                scale);
         return;
     }
 
@@ -807,14 +784,8 @@ static void drawTextSlice(Display& display,
                           int baselineY,
                           uint16_t color,
                           float scale) {
-    int cursorX = x;
     const int top = baselineY - scaleLength(FONT_ASCENT, scale);
-
-    for (int i = 0; i < length; i++) {
-        const unsigned char c = static_cast<unsigned char>(text[start + i]);
-        drawCharScaled(display, c, cursorX, top, color, scale);
-        cursorX += scaleLength(FONT_CHAR_ADVANCE, scale);
-    }
+    display.drawTextSliceScaled(text, start, length, x, top, color, scale);
 }
 
 static void drawBoxRecursive(const Context& parseCtx,

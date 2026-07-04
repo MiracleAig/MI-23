@@ -16,6 +16,7 @@ add_executable(mi23_tests
         test_math_typeset.cpp
         test_settings_app.cpp
         test_settings_store.cpp
+        test_system_status.cpp
         ../firmware/app/calculator/calculator_app.cpp
         ../firmware/app/boot/boot_manager.cpp
         ../firmware/app/graphing/graph_app.cpp
@@ -23,6 +24,8 @@ add_executable(mi23_tests
         ../firmware/app/home/calculator_home.cpp
         ../firmware/app/settings/settings_app.cpp
         ../firmware/app/settings/settings_state.cpp
+        ../firmware/app/ui/system_status.cpp
+        ../firmware/app/ui/title_bar.cpp
         ../firmware/hal/settings_store.cpp
         ../firmware/platform/host/simulator_keypad.cpp
         ../firmware/platform/host/settings_store_host.cpp

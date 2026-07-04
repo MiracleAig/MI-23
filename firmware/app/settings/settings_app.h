@@ -35,6 +35,7 @@ private:
     bool m_saveRequested;
     bool m_needsRender;
     DirtyRegionList m_dirtyRegions;
+    DisplayRect m_contentBounds;
 
     void renderMain(int x, int y, int w, int h);
     void renderAbout(int x, int y, int w, int h);

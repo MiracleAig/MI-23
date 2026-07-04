@@ -25,6 +25,10 @@ if(PLATFORM STREQUAL "host")
             app/settings/settings_app.h
             app/settings/settings_state.cpp
             app/settings/settings_state.h
+            app/ui/system_status.cpp
+            app/ui/system_status.h
+            app/ui/title_bar.cpp
+            app/ui/title_bar.h
             hal/settings_store.cpp
             hal/settings_store.h
             graphics/font.h

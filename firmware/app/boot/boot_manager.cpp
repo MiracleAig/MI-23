@@ -36,21 +36,12 @@ void drawCenteredText(Display& display, const char* text, int y, Color color) {
 }
 
 void drawLogo(Display& display) {
-    const int boxX = 64;
+    const int boxX = 128;
     const int boxY = 28;
     const int boxW = 192;
     const int boxH = 58;
 
-    display.fillRect(boxX, boxY, boxW, boxH, COLOR_PANEL);
-    display.drawRect(boxX, boxY, boxW, boxH, COLOR_ACCENT);
-    display.fillRect(boxX + 10, boxY + 10, 10, 38, COLOR_PROGRESS_FILL);
-    display.fillRect(boxX + 28, boxY + 10, 10, 38, COLOR_PROGRESS_FILL);
-    display.fillRect(boxX + 46, boxY + 10, 10, 38, COLOR_PROGRESS_FILL);
-    display.fillRect(boxX + 72, boxY + 10, 44, 8, COLOR_TEXT);
-    display.fillRect(boxX + 72, boxY + 24, 44, 8, COLOR_TEXT);
-    display.fillRect(boxX + 72, boxY + 38, 44, 8, COLOR_TEXT);
-    display.drawText("MI-23", boxX + 130, boxY + 18, COLOR_TEXT);
-    display.drawText("Miracle's Instruments", boxX + 72, boxY + 50, COLOR_MUTED);
+
 }
 
 } // namespace
@@ -273,7 +264,6 @@ void BootManager::renderNormal() {
     m_display.clear(COLOR_BG);
     drawLogo(m_display);
 
-    drawCenteredText(m_display, "MI-23", 98, COLOR_TEXT);
     drawCenteredText(m_display, m_backend.platformName(), 112, COLOR_MUTED);
     drawCenteredText(m_display, m_backend.firmwareVersion(), 126, COLOR_MUTED);
 

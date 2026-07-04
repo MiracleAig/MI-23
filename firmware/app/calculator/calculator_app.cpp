@@ -50,28 +50,7 @@ static void drawPlainTextScaled(Display& display,
                                 int y,
                                 uint16_t color,
                                 int scale) {
-    const int normalized = normalizedScale(scale);
-    int cursorX = x;
-
-    while (*text != '\0') {
-        const unsigned char c = static_cast<unsigned char>(*text);
-        const uint8_t* glyph = &FONT_DATA[c * FONT_CHAR_WIDTH];
-        for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
-            const uint8_t columnBits = glyph[col];
-            for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-                if ((columnBits >> row) & 1U) {
-                    display.fillRect(cursorX + col * normalized,
-                                     y + row * normalized,
-                                     normalized,
-                                     normalized,
-                                     color);
-                }
-            }
-        }
-
-        cursorX += FONT_CHAR_ADVANCE * normalized;
-        text++;
-    }
+    display.drawTextScaled(text, x, y, color, static_cast<float>(normalizedScale(scale)));
 }
 
 static const char* functionInsertText(Key key) {
@@ -326,6 +305,8 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
         ? HISTORY_BOTTOM_WITH_KEYPAD
         : (DISPLAY_HEIGHT - 4))
     , m_historyHeight(m_historyBottom - HISTORY_TOP)
+    , m_contentY(0)
+    , m_contentHeight(DISPLAY_HEIGHT)
     , m_historyCount(0)
     , m_historyStart(0)
     , m_historyScroll(0)
@@ -346,7 +327,7 @@ const Button* CalculatorApp::hitTest(int mx, int my) const {
     for (int row = 0; row < BTN_ROWS; row++) {
         for (int col = 0; col < BTN_COLS; col++) {
             int x = btnX(col);
-            int y = btnY(row);
+            int y = buttonY(row);
             if (mx >= x && mx < x + BTN_W &&
                 my >= y && my < y + BTN_H) {
                 return &BUTTONS[row][col];
@@ -582,7 +563,7 @@ void CalculatorApp::render() {
     for (int i = 0; i < m_dirtyRegions.count(); ++i) {
         m_display.setClipRect(m_dirtyRegions.rect(i));
         m_display.clear(Display::BLACK);
-        m_display.fillRect(0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight,
+        m_display.fillRect(0, historyTop(), DISPLAY_WIDTH, m_historyHeight,
                            COLOR_HISTORY_BG);
         drawHistory();
         drawInputRow();
@@ -594,6 +575,11 @@ void CalculatorApp::render() {
     m_display.present();
     m_dirtyRegions.clear();
     m_needsRender = false;
+}
+
+void CalculatorApp::renderContent(int contentY, int contentHeight) {
+    setContentArea(contentY, contentHeight);
+    render();
 }
 
 bool CalculatorApp::updateBlink(uint64_t nowMs) {
@@ -644,11 +630,12 @@ bool CalculatorApp::ensureInputLayout() {
 
 void CalculatorApp::drawHistory() {
     int startIndex = m_historyScroll;
-    int y = HISTORY_TOP;
+    const int top = historyTop();
+    int y = top;
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
                                                                     currentUiScale());
-    const int historyBottom = HISTORY_TOP + historyViewportHeight;
+    const int historyBottom = top + historyViewportHeight;
 
     for (int i = startIndex; i < historySize(); i++) {
         const int entryHeight = historyEntryHeight(historyAt(i), currentUiScale());
@@ -656,7 +643,7 @@ void CalculatorApp::drawHistory() {
             break;
         }
 
-        if (y > HISTORY_TOP) {
+        if (y > top) {
             m_display.fillRect(MARGIN, y - 2,
                                DISPLAY_WIDTH - MARGIN * 2, 1,
                                COLOR_SEPARATOR);
@@ -721,14 +708,15 @@ void CalculatorApp::drawInputRow() {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
                                                                     currentUiScale());
-    int inputY = HISTORY_TOP
+    const int top = historyTop();
+    int inputY = top
         + visibleHistoryHeight(historySize(),
                                [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                m_historyScroll,
                                historyViewportHeight,
                                currentUiScale());
 
-    if (inputY > HISTORY_TOP) {
+    if (inputY > top) {
         m_display.fillRect(MARGIN, inputY - 2,
                            DISPLAY_WIDTH - MARGIN * 2, 1,
                            COLOR_SEPARATOR);
@@ -739,7 +727,7 @@ void CalculatorApp::drawInputRow() {
     m_display.fillRect(0,
                        inputTop,
                        DISPLAY_WIDTH,
-                       std::min(inputRowHeight, DISPLAY_HEIGHT - inputTop),
+                       std::min(inputRowHeight, contentBottom() - inputTop),
                        Display::BLACK);
 
     math_typeset::LayoutMetrics metrics = m_cachedInputMetrics;
@@ -843,15 +831,15 @@ void CalculatorApp::drawCursor(int originX,
 
     if (cursorX < DISPLAY_WIDTH - MARGIN) {
         const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
-        cursorTop = std::max(0, cursorTop);
-        cursorHeight = std::min(cursorHeight, DISPLAY_HEIGHT - cursorTop);
+        cursorTop = std::max(m_contentY, cursorTop);
+        cursorHeight = std::min(cursorHeight, contentBottom() - cursorTop);
         m_display.fillRect(cursorX, cursorTop, cursorWidth, cursorHeight, Display::WHITE);
     }
 
     if (m_config.settings && m_config.settings->developer.showCursorPosition) {
         char label[28] = {};
         snprintf(label, sizeof(label), "cur:%d x:%d", m_cursorPos, cursorX);
-        m_display.drawText(label, MARGIN, DISPLAY_HEIGHT - FONT_CHAR_HEIGHT - 1,
+        m_display.drawText(label, MARGIN, contentBottom() - FONT_CHAR_HEIGHT - 1,
                            Display::GREEN);
     }
 }
@@ -871,11 +859,12 @@ void CalculatorApp::drawScrollbar(int maxScroll, int viewportHeight) {
         viewportHeight + inputEntryHeight("", currentUiScale()) * maxScroll);
     int scrollbarHeight = std::max(8,
         (viewportHeight * std::max(1, visibleHeight)) / contentHeight);
-    int scrollbarY = HISTORY_TOP
+    const int top = historyTop();
+    int scrollbarY = top
         + ((viewportHeight - scrollbarHeight) * m_historyScroll)
             / std::max(1, maxScroll);
 
-    m_display.fillRect(scrollbarX, HISTORY_TOP, 3, viewportHeight,
+    m_display.fillRect(scrollbarX, top, 3, viewportHeight,
                        COLOR_SCROLLBAR_BG);
     m_display.fillRect(scrollbarX, scrollbarY, 3, scrollbarHeight,
                        Display::WHITE);
@@ -888,7 +877,7 @@ void CalculatorApp::drawButtonGrid() {
             const Button& btn = BUTTONS[row][col];
 
             int x = btnX(col);
-            int y = btnY(row);
+            int y = buttonY(row);
 
 
             uint16_t bgColor;
@@ -941,15 +930,47 @@ int CalculatorApp::currentPrecision() const {
         : 6;
 }
 
+int CalculatorApp::contentBottom() const {
+    return m_contentY + m_contentHeight;
+}
+
+int CalculatorApp::historyTop() const {
+    return m_contentY + HISTORY_TOP;
+}
+
+void CalculatorApp::setContentArea(int contentY, int contentHeight) {
+    contentY = std::clamp(contentY, 0, DISPLAY_HEIGHT);
+    contentHeight = std::clamp(contentHeight, 0, DISPLAY_HEIGHT - contentY);
+    if (contentY == m_contentY && contentHeight == m_contentHeight) {
+        return;
+    }
+
+    m_contentY = contentY;
+    m_contentHeight = contentHeight;
+    m_dirtyRegions.clear();
+    updateContentMetrics();
+    invalidateFullScreen();
+    m_needsRender = true;
+}
+
+void CalculatorApp::updateContentMetrics() {
+    const int localBottom = m_config.showOnScreenKeypad
+        ? std::min(HISTORY_BOTTOM_WITH_KEYPAD, std::max(0, m_contentHeight - 4))
+        : std::max(0, m_contentHeight - 4);
+    m_historyBottom = m_contentY + localBottom;
+    m_historyHeight = std::max(0, m_historyBottom - historyTop());
+    clampScroll();
+}
+
 DisplayRect CalculatorApp::historyRect() const {
-    return {0, HISTORY_TOP, DISPLAY_WIDTH, m_historyHeight};
+    return {0, historyTop(), DISPLAY_WIDTH, m_historyHeight};
 }
 
 DisplayRect CalculatorApp::inputRowRect() const {
     const int historyViewportHeight = historyViewportHeightForInput(m_inputBuffer,
                                                                     m_historyHeight,
                                                                     currentUiScale());
-    const int inputY = HISTORY_TOP
+    const int inputY = historyTop()
         + visibleHistoryHeight(historySize(),
                                [this](int i) -> const HistoryEntry& { return historyAt(i); },
                                m_historyScroll,
@@ -959,14 +980,15 @@ DisplayRect CalculatorApp::inputRowRect() const {
 }
 
 DisplayRect CalculatorApp::keypadRect() const {
-    return {0, BTN_AREA_TOP, DISPLAY_WIDTH, DISPLAY_HEIGHT - BTN_AREA_TOP};
+    const int top = m_contentY + BTN_AREA_TOP;
+    return {0, top, DISPLAY_WIDTH, std::max(0, contentBottom() - top)};
 }
 
 DisplayRect CalculatorApp::cursorDebugRect() const {
     if (!(m_config.settings && m_config.settings->developer.showCursorPosition)) {
         return {0, 0, 0, 0};
     }
-    return {MARGIN, DISPLAY_HEIGHT - FONT_CHAR_HEIGHT - 1,
+    return {MARGIN, contentBottom() - FONT_CHAR_HEIGHT - 1,
             DISPLAY_WIDTH - MARGIN * 2, FONT_CHAR_HEIGHT + 1};
 }
 
@@ -1006,8 +1028,8 @@ DisplayRect CalculatorApp::cursorRect() {
     }
 
     const int cursorWidth = std::max(2, math_typeset::scaleLength(1, expressionScale));
-    cursorTop = std::max(0, cursorTop);
-    cursorHeight = std::min(cursorHeight, DISPLAY_HEIGHT - cursorTop);
+    cursorTop = std::max(m_contentY, cursorTop);
+    cursorHeight = std::min(cursorHeight, contentBottom() - cursorTop);
     return {cursorX, cursorTop, cursorWidth, cursorHeight};
 }
 
@@ -1016,8 +1038,12 @@ void CalculatorApp::invalidateRect(DisplayRect rect) {
 }
 
 void CalculatorApp::invalidateFullScreen() {
-    invalidateRect({0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
+    invalidateRect({0, m_contentY, DISPLAY_WIDTH, m_contentHeight});
     if (m_config.showOnScreenKeypad) {
         invalidateRect(keypadRect());
     }
+}
+
+int CalculatorApp::buttonY(int row) const {
+    return m_contentY + BTN_AREA_TOP + BTN_MARGIN + row * (BTN_H + BTN_MARGIN);
 }

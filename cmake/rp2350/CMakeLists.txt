@@ -19,6 +19,8 @@ add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/ui/system_status.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/ui/title_bar.cpp
         ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.cpp
@@ -27,6 +29,8 @@ add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_renderer.h
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/settings/settings_state.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/ui/system_status.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/ui/title_bar.h
         ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.h
         ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.h

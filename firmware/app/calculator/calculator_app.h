@@ -54,6 +54,7 @@ public:
     void handlePointerDown(int logicalX, int logicalY);
     void scrollHistory(int delta);
     void render();
+    void renderContent(int contentY, int contentHeight);
     bool updateBlink(uint64_t nowMs);
     void requestRender();
     void requestInputRender();
@@ -79,6 +80,8 @@ private:
     bool m_awaitingNewInput;
     int m_historyBottom;
     int m_historyHeight;
+    int m_contentY;
+    int m_contentHeight;
 
     std::array<HistoryEntry, MAX_HISTORY> m_history;
     int m_historyCount;
@@ -107,6 +110,10 @@ private:
     void drawButtonGrid();
     int currentUiScale() const;
     int currentPrecision() const;
+    int contentBottom() const;
+    int historyTop() const;
+    void setContentArea(int contentY, int contentHeight);
+    void updateContentMetrics();
     DisplayRect historyRect() const;
     DisplayRect inputRowRect() const;
     DisplayRect keypadRect() const;
@@ -119,9 +126,7 @@ private:
     static int btnX(int col) {
         return BTN_MARGIN + col * (BTN_W + BTN_MARGIN);
     }
-    static int btnY(int row) {
-        return BTN_AREA_TOP + BTN_MARGIN + row * (BTN_H + BTN_MARGIN);
-    }
+    int buttonY(int row) const;
 
     // Returns which button was clicked, or nullptr if click missed all buttons
     const Button* hitTest(int mouseX, int mouseY) const;
