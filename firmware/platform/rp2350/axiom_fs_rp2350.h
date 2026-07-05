@@ -11,6 +11,7 @@ public:
     RP2350AxiomFSBackend();
 
     AxiomFS::Status mount() override;
+    AxiomFS::Status unmount() override;
     AxiomFS::Status format() override;
     AxiomFS::Status exists(const std::string& path, bool& outExists) override;
     AxiomFS::ReadResult readFile(const std::string& path) override;
@@ -22,12 +23,20 @@ public:
     AxiomFS::SpaceResult getFreeSpace() override;
     AxiomFS::SpaceResult getTotalSpace() override;
     const char* backendName() const override;
+    bool isMounted() const override;
     AxiomFS::MountFailureReason lastMountFailureReason() const override;
+    bool isFreshBlankFilesystem() const override;
+    AxiomFS::Diagnostics getDiagnostics() override;
+    AxiomFS::ProbeResult runProbe() override;
+    AxiomFS::Status eraseStorageRegion() override;
 
 private:
     bool m_mounted;
     AxiomFS::MountFailureReason m_lastMountFailureReason;
     int m_lastLittleFsError;
+    bool m_lastProbeValid;
+    bool m_lastProbeErased;
+    bool m_lastProbeHasMagic;
 
 #if MI23_ENABLE_LITTLEFS
     lfs_t m_lfs;

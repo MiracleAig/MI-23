@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
+#include <set>
 #include <string>
 
 namespace {
@@ -33,37 +35,86 @@ public:
 class MockAxiomFSBackend : public AxiomFS::Backend {
 public:
     MockAxiomFSBackend(AxiomFS::Status mountStatus,
-                       AxiomFS::MountFailureReason mountFailureReason)
+                       AxiomFS::MountFailureReason mountFailureReason,
+                       AxiomFS::Status formatStatus = AxiomFS::Status::Unsupported,
+                       bool freshBlankFilesystem = false,
+                       bool mountAfterFormat = false)
         : m_mountStatus(mountStatus)
-        , m_mountFailureReason(mountFailureReason) {}
+        , m_mountFailureReason(mountFailureReason)
+        , m_formatStatus(formatStatus)
+        , m_freshBlankFilesystem(freshBlankFilesystem)
+        , m_mountAfterFormat(mountAfterFormat) {}
 
     AxiomFS::Status mount() override {
-        return m_mountStatus;
+        ++m_mountCalls;
+        const AxiomFS::Status status = m_formatted && m_mountAfterFormat
+            ? AxiomFS::Status::Ok
+            : m_mountStatus;
+        m_mounted = status == AxiomFS::Status::Ok;
+        if (m_mounted) {
+            m_mountFailureReason = AxiomFS::MountFailureReason::None;
+        }
+        return status;
     }
 
     AxiomFS::Status format() override {
-        return AxiomFS::Status::Unsupported;
+        ++m_formatCalls;
+        if (m_formatStatus == AxiomFS::Status::Ok) {
+            m_formatted = true;
+            m_mounted = false;
+        }
+        return m_formatStatus;
     }
 
-    AxiomFS::Status exists(const std::string&, bool& outExists) override {
-        outExists = false;
-        return AxiomFS::Status::NotMounted;
+    AxiomFS::Status exists(const std::string& path, bool& outExists) override {
+        if (!m_mounted) {
+            outExists = false;
+            return AxiomFS::Status::NotMounted;
+        }
+        outExists = m_directories.count(path) > 0 || m_files.count(path) > 0;
+        return AxiomFS::Status::Ok;
     }
 
-    AxiomFS::ReadResult readFile(const std::string&) override {
-        return {};
+    AxiomFS::ReadResult readFile(const std::string& path) override {
+        AxiomFS::ReadResult result;
+        if (!m_mounted) {
+            result.status = AxiomFS::Status::NotMounted;
+            return result;
+        }
+        const auto found = m_files.find(path);
+        if (found == m_files.end()) {
+            result.status = AxiomFS::Status::NotFound;
+            return result;
+        }
+        result.status = AxiomFS::Status::Ok;
+        result.data.assign(found->second.begin(), found->second.end());
+        return result;
     }
 
-    AxiomFS::Status writeFile(const std::string&, const uint8_t*, std::size_t) override {
-        return AxiomFS::Status::NotMounted;
+    AxiomFS::Status writeFile(const std::string& path, const uint8_t* data, std::size_t size) override {
+        if (!m_mounted) {
+            return AxiomFS::Status::NotMounted;
+        }
+        m_files[path] = data && size > 0
+            ? std::string(reinterpret_cast<const char*>(data), size)
+            : std::string();
+        return AxiomFS::Status::Ok;
     }
 
-    AxiomFS::Status deleteFile(const std::string&) override {
-        return AxiomFS::Status::NotMounted;
+    AxiomFS::Status deleteFile(const std::string& path) override {
+        if (!m_mounted) {
+            return AxiomFS::Status::NotMounted;
+        }
+        m_files.erase(path);
+        return AxiomFS::Status::Ok;
     }
 
-    AxiomFS::Status createDir(const std::string&) override {
-        return AxiomFS::Status::NotMounted;
+    AxiomFS::Status createDir(const std::string& path) override {
+        if (!m_mounted) {
+            return AxiomFS::Status::NotMounted;
+        }
+        m_directories.insert(path);
+        return AxiomFS::Status::Ok;
     }
 
     AxiomFS::Status renameFile(const std::string&, const std::string&) override {
@@ -90,9 +141,30 @@ public:
         return m_mountFailureReason;
     }
 
+    bool isFreshBlankFilesystem() const override {
+        return m_freshBlankFilesystem;
+    }
+
+    int mountCalls() const {
+        return m_mountCalls;
+    }
+
+    int formatCalls() const {
+        return m_formatCalls;
+    }
+
 private:
     AxiomFS::Status m_mountStatus;
     AxiomFS::MountFailureReason m_mountFailureReason;
+    AxiomFS::Status m_formatStatus;
+    bool m_freshBlankFilesystem;
+    bool m_mountAfterFormat;
+    bool m_mounted = false;
+    bool m_formatted = false;
+    int m_mountCalls = 0;
+    int m_formatCalls = 0;
+    std::set<std::string> m_directories;
+    std::map<std::string, std::string> m_files;
 };
 
 } // namespace
@@ -209,6 +281,45 @@ TEST(AxiomFSHealth, MissingMagicOnNonblankStorageIsCorruptNotUnformatted) {
     EXPECT_EQ(health.status, AxiomFS::FilesystemStatus::Error);
     EXPECT_EQ(health.mountStatus, AxiomFS::Status::NotFound);
     EXPECT_EQ(health.mountFailureReason, AxiomFS::MountFailureReason::MissingMagic);
+}
+
+TEST(AxiomFSBoot, FreshBlankFilesystemFormatsAndMounts) {
+    MockAxiomFSBackend backend(AxiomFS::Status::NotFound,
+                               AxiomFS::MountFailureReason::NotFormatted,
+                               AxiomFS::Status::Ok,
+                               true,
+                               true);
+    AxiomFS::FileSystem fs(backend);
+
+    const AxiomFS::HealthResult health = AxiomFS::initializeForBoot(fs, "[fs][test]");
+
+    EXPECT_EQ(health.status, AxiomFS::FilesystemStatus::Healthy);
+    EXPECT_EQ(health.mountStatus, AxiomFS::Status::Ok);
+    EXPECT_TRUE(health.defaultLayoutReady);
+    EXPECT_TRUE(health.readWriteReady);
+    EXPECT_GE(backend.mountCalls(), 2);
+    EXPECT_EQ(backend.formatCalls(), 1);
+
+    bool graphsExists = false;
+    EXPECT_EQ(fs.exists("graphs", graphsExists), AxiomFS::Status::Ok);
+    EXPECT_TRUE(graphsExists);
+    EXPECT_EQ(AxiomFS::getLastHealthResult().status, AxiomFS::FilesystemStatus::Healthy);
+}
+
+TEST(AxiomFSBoot, NonblankMissingMagicDoesNotAutoFormat) {
+    MockAxiomFSBackend backend(AxiomFS::Status::NotFound,
+                               AxiomFS::MountFailureReason::MissingMagic,
+                               AxiomFS::Status::Ok,
+                               false,
+                               true);
+    AxiomFS::FileSystem fs(backend);
+
+    const AxiomFS::HealthResult health = AxiomFS::initializeForBoot(fs, "[fs][test]");
+
+    EXPECT_EQ(health.status, AxiomFS::FilesystemStatus::Error);
+    EXPECT_EQ(health.mountStatus, AxiomFS::Status::NotFound);
+    EXPECT_EQ(health.mountFailureReason, AxiomFS::MountFailureReason::MissingMagic);
+    EXPECT_EQ(backend.formatCalls(), 0);
 }
 
 TEST(AxiomFSHealth, DistinguishesBackendUnavailable) {

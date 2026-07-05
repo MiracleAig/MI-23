@@ -41,6 +41,12 @@ project(mi23)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(BUILD_TESTING "Build unit tests" ON)
+option(MI23_ENABLE_DEVELOPER_OPTIONS "Enable hidden developer diagnostics menus" OFF)
+
+set(MI23_DEVELOPER_OPTIONS_DEFINE 0)
+if(MI23_ENABLE_DEVELOPER_OPTIONS)
+    set(MI23_DEVELOPER_OPTIONS_DEFINE 1)
+endif()
 
 if(PLATFORM STREQUAL "rp2350")
     pico_sdk_init()

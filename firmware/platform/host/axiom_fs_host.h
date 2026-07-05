@@ -11,6 +11,7 @@ public:
     explicit HostAxiomFSBackend(std::filesystem::path root);
 
     AxiomFS::Status mount() override;
+    AxiomFS::Status unmount() override;
     AxiomFS::Status format() override;
     AxiomFS::Status exists(const std::string& path, bool& outExists) override;
     AxiomFS::ReadResult readFile(const std::string& path) override;
@@ -22,6 +23,9 @@ public:
     AxiomFS::SpaceResult getFreeSpace() override;
     AxiomFS::SpaceResult getTotalSpace() override;
     const char* backendName() const override;
+    bool isMounted() const override;
+    AxiomFS::Diagnostics getDiagnostics() override;
+    AxiomFS::ProbeResult runProbe() override;
 
     const std::filesystem::path& root() const;
 

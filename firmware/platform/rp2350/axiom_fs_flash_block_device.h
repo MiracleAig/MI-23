@@ -29,6 +29,7 @@ public:
     static bool probe();
     static bool isRegionErased();
     static bool hasLittleFsMagic();
+    static int eraseRegion();
 
     static int read(uint32_t block, uint32_t offset, void* buffer, uint32_t size);
     static int program(uint32_t block, uint32_t offset, const void* buffer, uint32_t size);

@@ -8,6 +8,10 @@
 
 #include <filesystem>
 
+#ifndef MI23_ENABLE_DEVELOPER_OPTIONS
+#define MI23_ENABLE_DEVELOPER_OPTIONS 0
+#endif
+
 class SettingsNullDisplay : public Display {
 public:
     void init() override {}
@@ -82,6 +86,7 @@ TEST(SettingsApp, CyclesMainSettingsAndConfirmsReset) {
 }
 
 TEST(SettingsApp, DeveloperOptionsToggleInSubmenu) {
+#if MI23_ENABLE_DEVELOPER_OPTIONS
     SettingsNullDisplay display;
     SettingsState settings;
     SettingsApp app(display, settings, "Simulator");
@@ -100,6 +105,9 @@ TEST(SettingsApp, DeveloperOptionsToggleInSubmenu) {
 
     app.handleKey(Key::CLEAR); // Back to main settings
     EXPECT_TRUE(app.handleKey(Key::CLEAR)); // return-to-home request for caller
+#else
+    GTEST_SKIP() << "Developer Options menu is compile-gated off.";
+#endif
 }
 
 TEST(SettingsApp, FormatStorageInitializesFilesystemLayout) {
@@ -117,7 +125,8 @@ TEST(SettingsApp, FormatStorageInitializesFilesystemLayout) {
 
     SettingsApp app(display, settings, "Simulator", &fs);
     app.enter();
-    for (int i = 0; i < 10; ++i) {
+    const int storageIndex = MI23_ENABLE_DEVELOPER_OPTIONS ? 10 : 9;
+    for (int i = 0; i < storageIndex; ++i) {
         app.handleKey(Key::CURSOR_DOWN);
     }
     app.handleKey(Key::ENTER); // Storage Manager

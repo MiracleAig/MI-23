@@ -42,6 +42,10 @@ target_include_directories(mi23_tests
         ../firmware
 )
 
+target_compile_definitions(mi23_tests PRIVATE
+        MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
+)
+
 target_link_libraries(mi23_tests
         PRIVATE
         GTest::GTest

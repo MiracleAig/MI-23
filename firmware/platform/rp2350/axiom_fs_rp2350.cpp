@@ -60,6 +60,9 @@ RP2350AxiomFSBackend::RP2350AxiomFSBackend()
     : m_mounted(false)
     , m_lastMountFailureReason(AxiomFS::MountFailureReason::None)
     , m_lastLittleFsError(0)
+    , m_lastProbeValid(false)
+    , m_lastProbeErased(false)
+    , m_lastProbeHasMagic(false)
 #if MI23_ENABLE_LITTLEFS
     , m_lfs{}
     , m_config{}
@@ -90,6 +93,9 @@ RP2350AxiomFSBackend::RP2350AxiomFSBackend()
 AxiomFS::Status RP2350AxiomFSBackend::mount() {
     m_lastMountFailureReason = AxiomFS::MountFailureReason::None;
     m_lastLittleFsError = 0;
+    m_lastProbeValid = false;
+    m_lastProbeErased = false;
+    m_lastProbeHasMagic = false;
 
     std::printf("[fs][rp2350] backend selected: %s\n", backendName());
     std::printf("[fs][rp2350] littlefs compiled=%s\n",
@@ -140,6 +146,9 @@ AxiomFS::Status RP2350AxiomFSBackend::mount() {
 
     const bool erased = RP2350FlashBlockDevice::isRegionErased();
     const bool hasMagic = !erased && RP2350FlashBlockDevice::hasLittleFsMagic();
+    m_lastProbeValid = true;
+    m_lastProbeErased = erased;
+    m_lastProbeHasMagic = hasMagic;
     std::printf("[fs][rp2350] filesystem probe erased=%s magic=%s\n",
                 erased ? "yes" : "no",
                 hasMagic ? "yes" : "no");
@@ -177,6 +186,32 @@ AxiomFS::Status RP2350AxiomFSBackend::mount() {
 #else
     m_lastMountFailureReason = AxiomFS::MountFailureReason::BackendUnavailable;
     std::printf("[fs][rp2350] LittleFS support is not enabled in this build\n");
+    return AxiomFS::Status::Unsupported;
+#endif
+}
+
+AxiomFS::Status RP2350AxiomFSBackend::unmount() {
+#if MI23_ENABLE_LITTLEFS
+    if (!m_mounted) {
+        std::printf("[fs][rp2350] LittleFS unmount skipped: not mounted\n");
+        return AxiomFS::Status::Ok;
+    }
+
+    const int result = lfs_unmount(&m_lfs);
+    if (result != 0) {
+        m_lastLittleFsError = result;
+        std::printf("[fs][rp2350] LittleFS unmount result=%d error=%s status=%s\n",
+                    result,
+                    littleFsErrorName(result),
+                    AxiomFS::statusToString(mapLittleFsError(result)));
+        return mapLittleFsError(result);
+    }
+    m_mounted = false;
+    std::printf("[fs][rp2350] LittleFS unmount result=0 status=%s\n",
+                AxiomFS::statusToString(AxiomFS::Status::Ok));
+    return AxiomFS::Status::Ok;
+#else
+    std::printf("[fs][rp2350] LittleFS unmount unavailable: support is not enabled in this build\n");
     return AxiomFS::Status::Unsupported;
 #endif
 }
@@ -518,8 +553,181 @@ const char* RP2350AxiomFSBackend::backendName() const {
 #endif
 }
 
+bool RP2350AxiomFSBackend::isMounted() const {
+    return m_mounted;
+}
+
 AxiomFS::MountFailureReason RP2350AxiomFSBackend::lastMountFailureReason() const {
     return m_lastMountFailureReason;
+}
+
+bool RP2350AxiomFSBackend::isFreshBlankFilesystem() const {
+    return m_lastProbeValid && m_lastProbeErased && !m_lastProbeHasMagic;
+}
+
+AxiomFS::Diagnostics RP2350AxiomFSBackend::getDiagnostics() {
+    AxiomFS::Diagnostics diagnostics;
+    diagnostics.backendName = backendName();
+    diagnostics.mounted = m_mounted;
+    diagnostics.mountStatus = m_mounted ? AxiomFS::Status::Ok : AxiomFS::Status::NotMounted;
+    diagnostics.mountFailureReason = m_lastMountFailureReason;
+    diagnostics.geometryKnown = true;
+    diagnostics.flashSize = RP2350FlashBlockDevice::detectedFlashSize();
+    diagnostics.fsOffset = RP2350FlashBlockDevice::baseOffset();
+    diagnostics.fsSize = RP2350FlashBlockDevice::totalSize();
+    diagnostics.blockSize = RP2350FlashBlockDevice::blockSize();
+
+    if (m_mounted) {
+        const AxiomFS::HealthResult& health = AxiomFS::getLastHealthResult();
+        diagnostics.status = health.status == AxiomFS::FilesystemStatus::Unknown
+            ? AxiomFS::FilesystemStatus::Healthy
+            : health.status;
+    } else if (m_lastMountFailureReason == AxiomFS::MountFailureReason::NotFormatted) {
+        diagnostics.status = AxiomFS::FilesystemStatus::Unformatted;
+        diagnostics.mountStatus = AxiomFS::Status::NotFound;
+    } else if (m_lastMountFailureReason == AxiomFS::MountFailureReason::BackendUnavailable) {
+        diagnostics.status = AxiomFS::FilesystemStatus::NotMounted;
+        diagnostics.mountStatus = AxiomFS::Status::Unsupported;
+    } else if (m_lastMountFailureReason == AxiomFS::MountFailureReason::MissingMagic ||
+               m_lastMountFailureReason == AxiomFS::MountFailureReason::Corrupt ||
+               m_lastMountFailureReason == AxiomFS::MountFailureReason::MountFailed ||
+               m_lastMountFailureReason == AxiomFS::MountFailureReason::RegionInvalid ||
+               m_lastMountFailureReason == AxiomFS::MountFailureReason::FlashProbeFailed) {
+        diagnostics.status = AxiomFS::FilesystemStatus::Error;
+    } else {
+        diagnostics.status = AxiomFS::FilesystemStatus::NotMounted;
+    }
+
+    if (m_mounted) {
+        const AxiomFS::SpaceResult total = getTotalSpace();
+        const AxiomFS::SpaceResult free = getFreeSpace();
+        if (total.ok() && free.ok()) {
+            diagnostics.spaceKnown = true;
+            diagnostics.totalBytes = total.bytes;
+            diagnostics.freeBytes = free.bytes;
+            diagnostics.usedBytes = total.bytes >= free.bytes ? total.bytes - free.bytes : 0;
+        }
+    }
+
+    std::printf("[fs][rp2350] diagnostics backend=%s mounted=%s status=%s flash=%lu fs_offset=%lu fs_size=%lu block=%lu space=%s used=%llu free=%llu\n",
+                diagnostics.backendName,
+                diagnostics.mounted ? "yes" : "no",
+                AxiomFS::filesystemStatusToString(diagnostics.status),
+                static_cast<unsigned long>(diagnostics.flashSize),
+                static_cast<unsigned long>(diagnostics.fsOffset),
+                static_cast<unsigned long>(diagnostics.fsSize),
+                static_cast<unsigned long>(diagnostics.blockSize),
+                diagnostics.spaceKnown ? "yes" : "no",
+                static_cast<unsigned long long>(diagnostics.usedBytes),
+                static_cast<unsigned long long>(diagnostics.freeBytes));
+    return diagnostics;
+}
+
+AxiomFS::ProbeResult RP2350AxiomFSBackend::runProbe() {
+    AxiomFS::ProbeResult result;
+    result.mountedBeforeProbe = m_mounted;
+
+    std::printf("[fs][rp2350] probe requested mounted=%s offset=%lu size=%lu\n",
+                m_mounted ? "yes" : "no",
+                static_cast<unsigned long>(RP2350FlashBlockDevice::baseOffset()),
+                static_cast<unsigned long>(RP2350FlashBlockDevice::totalSize()));
+
+    const RP2350FlashBlockDevice::LayoutError layoutError =
+        RP2350FlashBlockDevice::validateLayout();
+    if (layoutError != RP2350FlashBlockDevice::LayoutError::None) {
+        m_lastMountFailureReason = AxiomFS::MountFailureReason::RegionInvalid;
+        result.probeStatus = AxiomFS::Status::IoError;
+        result.mountStatus = AxiomFS::Status::IoError;
+        result.mountFailureReason = m_lastMountFailureReason;
+        result.mountedAfterProbe = m_mounted;
+        std::printf("[fs][rp2350] probe blocked: filesystem region invalid: %s\n",
+                    RP2350FlashBlockDevice::layoutErrorToString(layoutError));
+        return result;
+    }
+
+    if (!RP2350FlashBlockDevice::probe()) {
+        m_lastMountFailureReason = AxiomFS::MountFailureReason::FlashProbeFailed;
+        result.probeStatus = AxiomFS::Status::IoError;
+        result.mountStatus = AxiomFS::Status::IoError;
+        result.mountFailureReason = m_lastMountFailureReason;
+        result.mountedAfterProbe = m_mounted;
+        std::printf("[fs][rp2350] probe failed: flash storage probe failed\n");
+        return result;
+    }
+
+    const bool erased = RP2350FlashBlockDevice::isRegionErased();
+    const bool hasMagic = !erased && RP2350FlashBlockDevice::hasLittleFsMagic();
+    m_lastProbeValid = true;
+    m_lastProbeErased = erased;
+    m_lastProbeHasMagic = hasMagic;
+    result.probeStatus = AxiomFS::Status::Ok;
+    result.erasedKnown = true;
+    result.erased = erased;
+    result.magicKnown = true;
+    result.hasMagic = hasMagic;
+
+    std::printf("[fs][rp2350] probe erased=%s magic=%s\n",
+                erased ? "yes" : "no",
+                hasMagic ? "yes" : "no");
+
+    result.mountStatus = mount();
+    result.mountFailureReason = m_lastMountFailureReason;
+
+#if MI23_ENABLE_LITTLEFS
+    if (!result.mountedBeforeProbe && m_mounted) {
+        const AxiomFS::Status unmountStatus = unmount();
+        std::printf("[fs][rp2350] probe cleanup unmount=%s\n",
+                    AxiomFS::statusToString(unmountStatus));
+    }
+#endif
+
+    result.mountedAfterProbe = m_mounted;
+    std::printf("[fs][rp2350] probe mount=%s reason=%s mounted_after=%s\n",
+                AxiomFS::statusToString(result.mountStatus),
+                AxiomFS::mountFailureReasonToString(result.mountFailureReason),
+                result.mountedAfterProbe ? "yes" : "no");
+    return result;
+}
+
+AxiomFS::Status RP2350AxiomFSBackend::eraseStorageRegion() {
+    std::printf("[fs][rp2350] erase filesystem requested mounted=%s\n",
+                m_mounted ? "yes" : "no");
+#if MI23_ENABLE_LITTLEFS
+    if (m_mounted) {
+        const AxiomFS::Status unmountStatus = unmount();
+        if (unmountStatus != AxiomFS::Status::Ok) {
+            std::printf("[fs][rp2350] erase filesystem blocked: unmount failed: %s\n",
+                        AxiomFS::statusToString(unmountStatus));
+            return unmountStatus;
+        }
+    }
+
+    const RP2350FlashBlockDevice::LayoutError layoutError =
+        RP2350FlashBlockDevice::validateLayout();
+    if (layoutError != RP2350FlashBlockDevice::LayoutError::None) {
+        m_lastMountFailureReason = AxiomFS::MountFailureReason::RegionInvalid;
+        std::printf("[fs][rp2350] erase filesystem blocked: filesystem region invalid: %s\n",
+                    RP2350FlashBlockDevice::layoutErrorToString(layoutError));
+        return AxiomFS::Status::IoError;
+    }
+
+    if (RP2350FlashBlockDevice::eraseRegion() != 0) {
+        m_lastMountFailureReason = AxiomFS::MountFailureReason::FlashProbeFailed;
+        std::printf("[fs][rp2350] erase filesystem failed\n");
+        return AxiomFS::Status::IoError;
+    }
+
+    m_lastMountFailureReason = AxiomFS::MountFailureReason::NotFormatted;
+    m_lastProbeValid = true;
+    m_lastProbeErased = true;
+    m_lastProbeHasMagic = false;
+    std::printf("[fs][rp2350] erase filesystem complete; storage intentionally left unformatted\n");
+    return AxiomFS::Status::Ok;
+#else
+    m_lastMountFailureReason = AxiomFS::MountFailureReason::BackendUnavailable;
+    std::printf("[fs][rp2350] erase filesystem unavailable: LittleFS support is not enabled in this build\n");
+    return AxiomFS::Status::Unsupported;
+#endif
 }
 
 #if MI23_ENABLE_LITTLEFS

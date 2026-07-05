@@ -71,11 +71,41 @@ struct SpaceResult {
     bool ok() const { return status == Status::Ok; }
 };
 
+struct ProbeResult {
+    Status probeStatus = Status::Unsupported;
+    Status mountStatus = Status::Unsupported;
+    MountFailureReason mountFailureReason = MountFailureReason::None;
+    bool erasedKnown = false;
+    bool erased = false;
+    bool magicKnown = false;
+    bool hasMagic = false;
+    bool mountedBeforeProbe = false;
+    bool mountedAfterProbe = false;
+};
+
+struct Diagnostics {
+    const char* backendName = "Unknown";
+    FilesystemStatus status = FilesystemStatus::Unknown;
+    Status mountStatus = Status::Unknown;
+    MountFailureReason mountFailureReason = MountFailureReason::None;
+    bool mounted = false;
+    bool geometryKnown = false;
+    uint32_t flashSize = 0;
+    uint32_t fsOffset = 0;
+    uint32_t fsSize = 0;
+    uint32_t blockSize = 0;
+    bool spaceKnown = false;
+    uint64_t totalBytes = 0;
+    uint64_t usedBytes = 0;
+    uint64_t freeBytes = 0;
+};
+
 class Backend {
 public:
     virtual ~Backend() = default;
 
     virtual Status mount() = 0;
+    virtual Status unmount();
     virtual Status format() = 0;
     virtual Status exists(const std::string& path, bool& outExists) = 0;
     virtual ReadResult readFile(const std::string& path) = 0;
@@ -87,7 +117,12 @@ public:
     virtual SpaceResult getFreeSpace() = 0;
     virtual SpaceResult getTotalSpace() = 0;
     virtual const char* backendName() const = 0;
+    virtual bool isMounted() const;
     virtual MountFailureReason lastMountFailureReason() const;
+    virtual bool isFreshBlankFilesystem() const;
+    virtual Diagnostics getDiagnostics();
+    virtual ProbeResult runProbe();
+    virtual Status eraseStorageRegion();
 
     virtual Status repairOrFormatForDevMode();
 };
@@ -97,6 +132,8 @@ public:
     explicit FileSystem(Backend& backend);
 
     Status mount();
+    Status unmount();
+    Status remount();
     Status format();
     Status exists(const std::string& path, bool& outExists);
     ReadResult readFile(const std::string& path);
@@ -110,7 +147,12 @@ public:
     SpaceResult getFreeSpace();
     SpaceResult getTotalSpace();
     const char* backendName() const;
+    bool isMounted() const;
     MountFailureReason lastMountFailureReason() const;
+    bool isFreshBlankFilesystem() const;
+    Diagnostics getDiagnostics();
+    ProbeResult runProbe();
+    Status eraseStorageRegion();
 
     // Development-only recovery hook. Boot code should call mount() and report
     // failures instead of formatting automatically.
@@ -151,6 +193,7 @@ const char* const* defaultDirectories();
 int defaultDirectoryCount();
 
 HealthResult initialize(FileSystem& fs);
+HealthResult initializeForBoot(FileSystem& fs, const char* platformLogPrefix = "[fs]");
 HealthResult formatAndInitialize(FileSystem& fs);
 Status ensureDefaultLayout(FileSystem& fs, int* createdDirectories = nullptr);
 HealthResult runHealthCheck(FileSystem& fs);

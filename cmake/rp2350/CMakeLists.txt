@@ -66,6 +66,7 @@ target_include_directories(mi23 PRIVATE
 target_compile_definitions(mi23 PRIVATE
         MI23_BUILD_TARGET="rp2350"
         MI23_FIRMWARE_VERSION="${MI23_FIRMWARE_VERSION}"
+        MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
 )
 
 pico_enable_stdio_usb(mi23 1)

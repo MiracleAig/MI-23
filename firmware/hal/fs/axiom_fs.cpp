@@ -95,8 +95,46 @@ bool isOk(Status status) {
     return status == Status::Ok;
 }
 
+AxiomFS::Status Backend::unmount() {
+    return Status::Unsupported;
+}
+
+bool Backend::isMounted() const {
+    return false;
+}
+
 MountFailureReason Backend::lastMountFailureReason() const {
     return MountFailureReason::None;
+}
+
+bool Backend::isFreshBlankFilesystem() const {
+    return false;
+}
+
+Diagnostics Backend::getDiagnostics() {
+    Diagnostics diagnostics;
+    diagnostics.backendName = backendName();
+    diagnostics.mounted = isMounted();
+    diagnostics.mountFailureReason = lastMountFailureReason();
+    diagnostics.mountStatus = diagnostics.mounted ? Status::Ok : Status::NotMounted;
+    diagnostics.status = diagnostics.mounted
+        ? FilesystemStatus::Healthy
+        : FilesystemStatus::NotMounted;
+    return diagnostics;
+}
+
+ProbeResult Backend::runProbe() {
+    ProbeResult result;
+    result.mountedBeforeProbe = isMounted();
+    result.mountStatus = mount();
+    result.mountFailureReason = lastMountFailureReason();
+    result.mountedAfterProbe = isMounted();
+    result.probeStatus = result.mountStatus;
+    return result;
+}
+
+Status Backend::eraseStorageRegion() {
+    return Status::Unsupported;
 }
 
 Status Backend::repairOrFormatForDevMode() {
@@ -118,6 +156,29 @@ FileSystem::FileSystem(Backend& backend)
 
 Status FileSystem::mount() {
     return m_backend.mount();
+}
+
+Status FileSystem::unmount() {
+    return m_backend.unmount();
+}
+
+Status FileSystem::remount() {
+    std::printf("[fs] remount requested backend=%s mounted=%s\n",
+                backendName(),
+                isMounted() ? "yes" : "no");
+    if (isMounted()) {
+        const Status unmountStatus = unmount();
+        std::printf("[fs] remount unmount result=%s\n", statusToString(unmountStatus));
+        if (unmountStatus != Status::Ok) {
+            return unmountStatus;
+        }
+    }
+
+    const Status mountStatus = mount();
+    std::printf("[fs] remount mount result=%s reason=%s\n",
+                statusToString(mountStatus),
+                mountFailureReasonToString(lastMountFailureReason()));
+    return mountStatus;
 }
 
 Status FileSystem::format() {
@@ -172,8 +233,29 @@ const char* FileSystem::backendName() const {
     return m_backend.backendName();
 }
 
+bool FileSystem::isMounted() const {
+    return m_backend.isMounted();
+}
+
 MountFailureReason FileSystem::lastMountFailureReason() const {
     return m_backend.lastMountFailureReason();
+}
+
+bool FileSystem::isFreshBlankFilesystem() const {
+    return m_backend.isFreshBlankFilesystem();
+}
+
+Diagnostics FileSystem::getDiagnostics() {
+    return m_backend.getDiagnostics();
+}
+
+ProbeResult FileSystem::runProbe() {
+    return m_backend.runProbe();
+}
+
+Status FileSystem::eraseStorageRegion() {
+    std::printf("[fs] erase storage region requested backend=%s\n", backendName());
+    return m_backend.eraseStorageRegion();
 }
 
 Status FileSystem::repairOrFormatForDevMode() {
@@ -355,6 +437,72 @@ HealthResult runHealthCheck(FileSystem& fs) {
 
 HealthResult initialize(FileSystem& fs) {
     return runHealthCheck(fs);
+}
+
+HealthResult initializeForBoot(FileSystem& fs, const char* platformLogPrefix) {
+    const char* prefix = platformLogPrefix ? platformLogPrefix : "[fs]";
+    HealthResult result = runHealthCheck(fs);
+    if (result.status != FilesystemStatus::Unformatted ||
+        result.mountFailureReason != MountFailureReason::NotFormatted ||
+        !fs.isFreshBlankFilesystem()) {
+        return result;
+    }
+
+    std::printf("%s fresh blank filesystem detected\n", prefix);
+    std::printf("%s formatting storage for first boot\n", prefix);
+
+    const Status formatStatus = fs.format();
+    if (formatStatus != Status::Ok) {
+        result.mountStatus = formatStatus;
+        result.status = formatStatus == Status::Unsupported
+            ? FilesystemStatus::NotMounted
+            : FilesystemStatus::Error;
+        result.mountFailureReason = fs.lastMountFailureReason();
+        setDetail(result, result.mountFailureReason == MountFailureReason::None
+            ? statusToString(formatStatus)
+            : mountFailureReasonToString(result.mountFailureReason));
+        std::printf("%s format failed: %s reason=%s\n",
+                    prefix,
+                    statusToString(formatStatus),
+                    mountFailureReasonToString(result.mountFailureReason));
+        g_lastHealthResult = result;
+        return result;
+    }
+
+    std::printf("%s format ok\n", prefix);
+
+    result = runHealthCheck(fs);
+    if (result.mountStatus == Status::Ok) {
+        std::printf("%s mount ok\n", prefix);
+    } else {
+        std::printf("%s mount failed after format: %s reason=%s\n",
+                    prefix,
+                    statusToString(result.mountStatus),
+                    mountFailureReasonToString(result.mountFailureReason));
+        return result;
+    }
+
+    if (result.defaultLayoutReady) {
+        std::printf("[fs] default directories created:");
+        for (const char* directory : kDefaultDirectories) {
+            std::printf(" /%s", directory);
+        }
+        std::printf("\n");
+    } else {
+        std::printf("[fs] default directories failed: %s\n",
+                    statusToString(result.layoutStatus));
+        return result;
+    }
+
+    if (result.status == FilesystemStatus::Healthy) {
+        std::printf("[fs] status=ready\n");
+    } else {
+        std::printf("[fs] status=%s detail=%s\n",
+                    filesystemStatusToString(result.status),
+                    result.detail.c_str());
+    }
+
+    return result;
 }
 
 HealthResult formatAndInitialize(FileSystem& fs) {

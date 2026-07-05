@@ -73,3 +73,5 @@ mi23
 .DS_Store
 Thumbs.db
 /mi23_fs/
+/build-rp2350-dev/
+/build-host-dev/

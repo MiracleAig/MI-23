@@ -78,7 +78,7 @@ StartupCheckResult RP2350StartupBackend::checkStorage() {
         return {false, true, false, "AxiomFS region invalid; storage disabled."};
     }
 
-    const AxiomFS::HealthResult health = AxiomFS::initialize(m_fs);
+    const AxiomFS::HealthResult health = AxiomFS::initializeForBoot(m_fs, "[fs][rp2350]");
     std::printf("[boot][rp2350] AxiomFS mount/init result health=%s mount=%s reason=%s layout=%s rw=%s detail=%s\n",
                 AxiomFS::filesystemStatusToString(health.status),
                 AxiomFS::statusToString(health.mountStatus),
@@ -95,7 +95,7 @@ StartupCheckResult RP2350StartupBackend::checkStorage() {
         return {true, true, true, "AxiomFS storage backend is unsupported in this build."};
     }
     if (health.status == AxiomFS::FilesystemStatus::Unformatted) {
-        std::printf("[boot][rp2350] AxiomFS unformatted: blank filesystem region detected; no automatic format performed\n");
+        std::printf("[boot][rp2350] AxiomFS unformatted: storage was not formatted automatically\n");
         return {true, true, true, "AxiomFS needs format; use storage recovery."};
     }
     if (health.mountFailureReason == AxiomFS::MountFailureReason::RegionInvalid) {

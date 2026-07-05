@@ -4,6 +4,7 @@
 #include "hardware/sync.h"
 #include "platform/rp2350/axiom_fs_flash_config.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -163,6 +164,40 @@ bool RP2350FlashBlockDevice::hasLittleFsMagic() {
         }
     }
     return false;
+}
+
+int RP2350FlashBlockDevice::eraseRegion() {
+    const LayoutError layoutError = validateLayout();
+    if (layoutError != LayoutError::None) {
+        std::printf("[fs][rp2350] erase-region blocked: filesystem region invalid: %s\n",
+                    layoutErrorToString(layoutError));
+        return -1;
+    }
+    if (!probe()) {
+        std::printf("[fs][rp2350] erase-region blocked: flash storage probe failed\n");
+        return -1;
+    }
+
+    std::printf("[fs][rp2350] erase-region start offset=%lu size=%lu block=%lu blocks=%lu\n",
+                static_cast<unsigned long>(baseOffset()),
+                static_cast<unsigned long>(totalSize()),
+                static_cast<unsigned long>(blockSize()),
+                static_cast<unsigned long>(blockCount()));
+    for (uint32_t block = 0; block < blockCount(); ++block) {
+        std::printf("[fs][rp2350] erase-region sector=%lu absolute_offset=%lu size=%lu\n",
+                    static_cast<unsigned long>(block),
+                    static_cast<unsigned long>(absoluteOffset(block, 0)),
+                    static_cast<unsigned long>(blockSize()));
+        const int result = erase(block);
+        if (result != 0) {
+            std::printf("[fs][rp2350] erase-region failed sector=%lu result=%d\n",
+                        static_cast<unsigned long>(block),
+                        result);
+            return result;
+        }
+    }
+    std::printf("[fs][rp2350] erase-region complete\n");
+    return 0;
 }
 
 int RP2350FlashBlockDevice::read(uint32_t block, uint32_t offset, void* buffer, uint32_t size) {

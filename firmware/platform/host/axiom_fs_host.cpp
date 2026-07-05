@@ -54,6 +54,12 @@ AxiomFS::Status HostAxiomFSBackend::mount() {
     return AxiomFS::Status::Ok;
 }
 
+AxiomFS::Status HostAxiomFSBackend::unmount() {
+    std::printf("[fs][host] unmounted AxiomFS at %s\n", m_root.string().c_str());
+    m_mounted = false;
+    return AxiomFS::Status::Ok;
+}
+
 AxiomFS::Status HostAxiomFSBackend::format() {
     if (m_root.empty()) {
         return AxiomFS::Status::InvalidPath;
@@ -382,6 +388,46 @@ const std::filesystem::path& HostAxiomFSBackend::root() const {
 
 const char* HostAxiomFSBackend::backendName() const {
     return "Host folder";
+}
+
+bool HostAxiomFSBackend::isMounted() const {
+    return m_mounted;
+}
+
+AxiomFS::Diagnostics HostAxiomFSBackend::getDiagnostics() {
+    AxiomFS::Diagnostics diagnostics;
+    diagnostics.backendName = backendName();
+    diagnostics.mounted = m_mounted;
+    diagnostics.mountStatus = m_mounted ? AxiomFS::Status::Ok : AxiomFS::Status::NotMounted;
+    diagnostics.status = m_mounted
+        ? AxiomFS::FilesystemStatus::Healthy
+        : AxiomFS::FilesystemStatus::NotMounted;
+
+    if (m_mounted) {
+        const AxiomFS::SpaceResult total = getTotalSpace();
+        const AxiomFS::SpaceResult free = getFreeSpace();
+        if (total.ok() && free.ok()) {
+            diagnostics.spaceKnown = true;
+            diagnostics.totalBytes = total.bytes;
+            diagnostics.freeBytes = free.bytes;
+            diagnostics.usedBytes = total.bytes >= free.bytes ? total.bytes - free.bytes : 0;
+        }
+    }
+
+    return diagnostics;
+}
+
+AxiomFS::ProbeResult HostAxiomFSBackend::runProbe() {
+    AxiomFS::ProbeResult result;
+    result.mountedBeforeProbe = m_mounted;
+    result.mountStatus = mount();
+    result.mountFailureReason = lastMountFailureReason();
+    result.mountedAfterProbe = m_mounted;
+    result.probeStatus = result.mountStatus;
+    std::printf("[fs][host] probe mount=%s mounted=%s\n",
+                AxiomFS::statusToString(result.mountStatus),
+                result.mountedAfterProbe ? "yes" : "no");
+    return result;
 }
 
 AxiomFS::Status HostAxiomFSBackend::resolvePath(const std::string& path,

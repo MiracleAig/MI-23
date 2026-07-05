@@ -4,6 +4,10 @@
 
 #include <cstdio>
 
+#ifndef MI23_ENABLE_DEVELOPER_OPTIONS
+#define MI23_ENABLE_DEVELOPER_OPTIONS 0
+#endif
+
 namespace {
 
 const Color COLOR_BG = Display::rgb(8, 10, 14);
@@ -14,8 +18,24 @@ const Color COLOR_MUTED = Display::rgb(150, 160, 172);
 const Color COLOR_FOCUS = Display::rgb(255, 230, 95);
 const Color COLOR_WARN = Display::rgb(255, 180, 80);
 
-constexpr int MAIN_ITEM_COUNT = 11;
-constexpr int DEV_ITEM_COUNT = 5;
+enum class MainItem {
+    AngleMode,
+    GraphGrid,
+    GraphAxes,
+    GraphResolution,
+    Theme,
+    UiScale,
+    About,
+    ResetSettings,
+    DeveloperOptions,
+    CalculatorPrecision,
+    StorageManager,
+};
+
+constexpr int MAIN_ITEM_COUNT = MI23_ENABLE_DEVELOPER_OPTIONS ? 11 : 10;
+constexpr int DEV_TOGGLE_COUNT = 5;
+constexpr int DEV_FS_ACTION_COUNT = MI23_ENABLE_DEVELOPER_OPTIONS ? 5 : 0;
+constexpr int DEV_ITEM_COUNT = DEV_TOGGLE_COUNT + DEV_FS_ACTION_COUNT;
 constexpr int STORAGE_ACTION_COUNT = 3;
 constexpr int PRECISION_VALUES[] = {3, 6, 9, 12};
 
@@ -47,19 +67,41 @@ void drawTextFit(Display& display,
     display.drawText(buffer, x, y, color);
 }
 
-const char* mainLabel(int index) {
+MainItem mainItemAt(int index) {
     switch (index) {
-        case 0: return "Angle Mode";
-        case 1: return "Graph Grid";
-        case 2: return "Graph Axes";
-        case 3: return "Graph Resolution";
-        case 4: return "Theme";
-        case 5: return "UI Scale";
-        case 6: return "About";
-        case 7: return "Reset Settings";
-        case 8: return "Developer Options";
-        case 9: return "Calculator Precision";
-        case 10: return "Storage Manager";
+        case 0: return MainItem::AngleMode;
+        case 1: return MainItem::GraphGrid;
+        case 2: return MainItem::GraphAxes;
+        case 3: return MainItem::GraphResolution;
+        case 4: return MainItem::Theme;
+        case 5: return MainItem::UiScale;
+        case 6: return MainItem::About;
+        case 7: return MainItem::ResetSettings;
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+        case 8: return MainItem::DeveloperOptions;
+        case 9: return MainItem::CalculatorPrecision;
+        case 10: return MainItem::StorageManager;
+#else
+        case 8: return MainItem::CalculatorPrecision;
+        case 9: return MainItem::StorageManager;
+#endif
+        default: return MainItem::AngleMode;
+    }
+}
+
+const char* mainLabel(MainItem item) {
+    switch (item) {
+        case MainItem::AngleMode: return "Angle Mode";
+        case MainItem::GraphGrid: return "Graph Grid";
+        case MainItem::GraphAxes: return "Graph Axes";
+        case MainItem::GraphResolution: return "Graph Resolution";
+        case MainItem::Theme: return "Theme";
+        case MainItem::UiScale: return "UI Scale";
+        case MainItem::About: return "About";
+        case MainItem::ResetSettings: return "Reset Settings";
+        case MainItem::DeveloperOptions: return "Developer Options";
+        case MainItem::CalculatorPrecision: return "Calculator Precision";
+        case MainItem::StorageManager: return "Storage Manager";
         default: return "";
     }
 }
@@ -71,6 +113,13 @@ const char* developerLabel(int index) {
         case 2: return "Show graph bounds";
         case 3: return "Parser logs";
         case 4: return "Input event logs";
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+        case 5: return "Filesystem Status";
+        case 6: return "Remount Filesystem";
+        case 7: return "Format Filesystem";
+        case 8: return "Erase Filesystem";
+        case 9: return "Run FS Check";
+#endif
         default: return "";
     }
 }
@@ -84,6 +133,10 @@ bool developerValue(const DeveloperSettings& dev, int index) {
         case 4: return dev.inputEventLogs;
         default: return false;
     }
+}
+
+bool developerItemIsToggle(int index) {
+    return index >= 0 && index < DEV_TOGGLE_COUNT;
 }
 
 const char* buildTypeLabel() {
@@ -109,6 +162,9 @@ SettingsApp::SettingsApp(Display& display,
     , m_developerIndex(0)
     , m_storageIndex(0)
     , m_storageMessage{}
+    , m_developerMessage{}
+    , m_probeResult{}
+    , m_hasProbeResult(false)
     , m_dirty(false)
     , m_saveRequested(false)
     , m_needsRender(true)
@@ -120,6 +176,9 @@ void SettingsApp::enter() {
     m_developerIndex = 0;
     m_storageIndex = 0;
     setStorageMessage("");
+    setDeveloperMessage("");
+    m_probeResult = {};
+    m_hasProbeResult = false;
     m_saveRequested = false;
     invalidateContent();
     requestRender();
@@ -139,6 +198,15 @@ bool SettingsApp::handleKey(Key key) {
         return false;
     }
 
+    if (m_screen == Screen::FilesystemStatus || m_screen == Screen::FilesystemCheck) {
+        if (key == Key::CLEAR || key == Key::ENTER) {
+            m_screen = Screen::Developer;
+            invalidateContent();
+        }
+        requestRender();
+        return false;
+    }
+
     if (m_screen == Screen::ResetConfirm) {
         if (key == Key::ENTER) {
             m_settings.resetToDefaults();
@@ -151,6 +219,66 @@ bool SettingsApp::handleKey(Key key) {
         requestRender();
         return false;
     }
+
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+    if (m_screen == Screen::DeveloperFormatConfirm) {
+        if (key == Key::ENTER) {
+            std::printf("[settings][dev] format filesystem confirmed\n");
+            if (m_filesystem) {
+                const AxiomFS::HealthResult health = AxiomFS::formatAndInitialize(*m_filesystem);
+                if (health.status == AxiomFS::FilesystemStatus::Healthy) {
+                    setDeveloperMessage("Format ok. Filesystem ready.");
+                } else {
+                    char message[96] = {};
+                    std::snprintf(message,
+                                  sizeof(message),
+                                  "Format failed: %s",
+                                  AxiomFS::filesystemStatusToString(health.status));
+                    setDeveloperMessage(message);
+                }
+            } else {
+                setDeveloperMessage("Storage backend unavailable.");
+            }
+            m_screen = Screen::Developer;
+            invalidateContent();
+        } else if (key == Key::CLEAR) {
+            std::printf("[settings][dev] format filesystem canceled\n");
+            m_screen = Screen::Developer;
+            invalidateContent();
+        }
+        requestRender();
+        return false;
+    }
+
+    if (m_screen == Screen::EraseConfirm) {
+        if (key == Key::ENTER) {
+            std::printf("[settings][dev] erase filesystem confirmed\n");
+            if (m_filesystem) {
+                const AxiomFS::Status status = m_filesystem->eraseStorageRegion();
+                if (status == AxiomFS::Status::Ok) {
+                    setDeveloperMessage("Erase ok. Reboot now.");
+                } else {
+                    char message[96] = {};
+                    std::snprintf(message,
+                                  sizeof(message),
+                                  "Erase failed: %s",
+                                  AxiomFS::statusToString(status));
+                    setDeveloperMessage(message);
+                }
+            } else {
+                setDeveloperMessage("Storage backend unavailable.");
+            }
+            m_screen = Screen::Developer;
+            invalidateContent();
+        } else if (key == Key::CLEAR) {
+            std::printf("[settings][dev] erase filesystem canceled\n");
+            m_screen = Screen::Developer;
+            invalidateContent();
+        }
+        requestRender();
+        return false;
+    }
+#endif
 
     if (m_screen == Screen::FormatConfirm) {
         if (key == Key::ENTER) {
@@ -208,7 +336,11 @@ bool SettingsApp::handleKey(Key key) {
         } else if (key == Key::CURSOR_DOWN) {
             m_developerIndex = (m_developerIndex + 1) % DEV_ITEM_COUNT;
         } else if (key == Key::ENTER || key == Key::CURSOR_LEFT || key == Key::CURSOR_RIGHT) {
-            toggleDeveloperSelected();
+            if (developerItemIsToggle(m_developerIndex)) {
+                toggleDeveloperSelected();
+            } else if (key == Key::ENTER) {
+                runDeveloperAction();
+            }
         }
         if (oldDeveloperIndex != m_developerIndex) {
             invalidateRect(developerRowRect(m_contentBounds.x,
@@ -244,13 +376,15 @@ bool SettingsApp::handleKey(Key key) {
             cycleSelected(1);
             break;
         case Key::ENTER:
-            if (m_selectedIndex == 6) {
+            if (mainItemAt(m_selectedIndex) == MainItem::About) {
                 m_screen = Screen::About;
-            } else if (m_selectedIndex == 7) {
+            } else if (mainItemAt(m_selectedIndex) == MainItem::ResetSettings) {
                 m_screen = Screen::ResetConfirm;
-            } else if (m_selectedIndex == 8) {
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+            } else if (mainItemAt(m_selectedIndex) == MainItem::DeveloperOptions) {
                 m_screen = Screen::Developer;
-            } else if (m_selectedIndex == 10) {
+#endif
+            } else if (mainItemAt(m_selectedIndex) == MainItem::StorageManager) {
                 m_screen = Screen::Storage;
             } else {
                 cycleSelected(1);
@@ -296,12 +430,20 @@ void SettingsApp::renderContent(int x, int y, int w, int h) {
             renderAbout(x, y, w, h);
         } else if (m_screen == Screen::Developer) {
             renderDeveloper(x, y, w, h);
+        } else if (m_screen == Screen::FilesystemStatus) {
+            renderFilesystemStatus(x, y, w, h);
+        } else if (m_screen == Screen::FilesystemCheck) {
+            renderFilesystemCheck(x, y, w, h);
         } else if (m_screen == Screen::ResetConfirm) {
             renderResetConfirm(x, y, w, h);
         } else if (m_screen == Screen::Storage) {
             renderStorage(x, y, w, h);
         } else if (m_screen == Screen::FormatConfirm) {
             renderFormatConfirm(x, y, w, h);
+        } else if (m_screen == Screen::DeveloperFormatConfirm) {
+            renderDeveloperFormatConfirm(x, y, w, h);
+        } else if (m_screen == Screen::EraseConfirm) {
+            renderEraseConfirm(x, y, w, h);
         } else {
             renderMain(x, y, w, h);
         }
@@ -361,23 +503,28 @@ void SettingsApp::renderMain(int x, int y, int w, int h) {
             m_display.fillRect(x + 6, rowY - 3, 3, rowHeight, COLOR_FOCUS);
         }
 
+        const MainItem item = mainItemAt(index);
         char value[32] = {};
-        switch (index) {
-            case 0: std::snprintf(value, sizeof(value), "%s", angleModeLabel(m_settings.angleMode)); break;
-            case 1: std::snprintf(value, sizeof(value), "%s", onOffLabel(m_settings.graphGrid)); break;
-            case 2: std::snprintf(value, sizeof(value), "%s", onOffLabel(m_settings.graphAxes)); break;
-            case 3: std::snprintf(value, sizeof(value), "%s", graphResolutionLabel(m_settings.graphResolution)); break;
-            case 4: std::snprintf(value, sizeof(value), "%s", themeModeLabel(m_settings.theme)); break;
-            case 5: std::snprintf(value, sizeof(value), "%s", uiScaleModeLabel(m_settings.uiScale)); break;
-            case 6: std::snprintf(value, sizeof(value), "Open"); break;
-            case 7: std::snprintf(value, sizeof(value), "Open"); break;
-            case 8: std::snprintf(value, sizeof(value), "Open"); break;
-            case 9: std::snprintf(value, sizeof(value), "%d dp", m_settings.calculatorPrecision); break;
-            case 10: std::snprintf(value, sizeof(value), "Open"); break;
+        switch (item) {
+            case MainItem::AngleMode: std::snprintf(value, sizeof(value), "%s", angleModeLabel(m_settings.angleMode)); break;
+            case MainItem::GraphGrid: std::snprintf(value, sizeof(value), "%s", onOffLabel(m_settings.graphGrid)); break;
+            case MainItem::GraphAxes: std::snprintf(value, sizeof(value), "%s", onOffLabel(m_settings.graphAxes)); break;
+            case MainItem::GraphResolution: std::snprintf(value, sizeof(value), "%s", graphResolutionLabel(m_settings.graphResolution)); break;
+            case MainItem::Theme: std::snprintf(value, sizeof(value), "%s", themeModeLabel(m_settings.theme)); break;
+            case MainItem::UiScale: std::snprintf(value, sizeof(value), "%s", uiScaleModeLabel(m_settings.uiScale)); break;
+            case MainItem::About:
+            case MainItem::ResetSettings:
+            case MainItem::DeveloperOptions:
+            case MainItem::StorageManager:
+                std::snprintf(value, sizeof(value), "Open");
+                break;
+            case MainItem::CalculatorPrecision:
+                std::snprintf(value, sizeof(value), "%d dp", m_settings.calculatorPrecision);
+                break;
             default: break;
         }
 
-        drawTextFit(m_display, mainLabel(index), x + 14, rowY, w / 2, selected ? COLOR_TEXT : COLOR_MUTED);
+        drawTextFit(m_display, mainLabel(item), x + 14, rowY, w / 2, selected ? COLOR_TEXT : COLOR_MUTED);
         const int valueX = x + w - Display::textWidth(value) - 12;
         m_display.drawText(value, valueX, rowY, selected ? COLOR_TEXT : COLOR_MUTED);
     }
@@ -414,6 +561,7 @@ void SettingsApp::renderDeveloper(int x, int y, int w, int h) {
     for (int i = 0; i < DEV_ITEM_COUNT; ++i) {
         const int rowY = listY + i * rowHeight;
         const bool selected = i == m_developerIndex;
+        const bool destructive = i == 7 || i == 8;
         m_display.fillRect(x + 6,
                            rowY - 3,
                            w - 12,
@@ -427,14 +575,19 @@ void SettingsApp::renderDeveloper(int x, int y, int w, int h) {
                     x + 14,
                     rowY,
                     w - 80,
-                    selected ? COLOR_TEXT : COLOR_MUTED);
-        const char* value = onOffLabel(developerValue(m_settings.developer, i));
+                    destructive ? COLOR_WARN : (selected ? COLOR_TEXT : COLOR_MUTED));
+        const char* value = developerItemIsToggle(i)
+            ? onOffLabel(developerValue(m_settings.developer, i))
+            : "Open";
         m_display.drawText(value,
                            x + w - Display::textWidth(value) - 12,
                            rowY,
                            selected ? COLOR_TEXT : COLOR_MUTED);
     }
 
+    if (m_developerMessage[0] != '\0') {
+        drawTextFit(m_display, m_developerMessage, x + 12, y + h - 28, w - 24, COLOR_WARN);
+    }
     m_display.drawText("Enter toggles  CLR back", x + 8, y + h - 14, COLOR_MUTED);
 }
 
@@ -513,23 +666,159 @@ void SettingsApp::renderFormatConfirm(int x, int y, int w, int h) {
     m_display.drawText("CLR = Cancel", x + 20, y + 92, COLOR_MUTED);
 }
 
+void SettingsApp::renderFilesystemStatus(int x, int y, int w, int h) {
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Filesystem Status", x + 8, y + 8, COLOR_TEXT);
+
+    AxiomFS::Diagnostics diagnostics;
+    if (m_filesystem) {
+        diagnostics = m_filesystem->getDiagnostics();
+    } else {
+        diagnostics.status = AxiomFS::FilesystemStatus::NotMounted;
+        diagnostics.mountStatus = AxiomFS::Status::Unsupported;
+    }
+
+    char line[80] = {};
+    int lineY = y + 30;
+    constexpr int kLineStep = 14;
+
+    std::snprintf(line, sizeof(line), "Backend: %s", diagnostics.backendName);
+    drawTextFit(m_display, line, x + 12, lineY, w - 24, COLOR_TEXT);
+    lineY += kLineStep;
+    std::snprintf(line, sizeof(line), "Mounted: %s", diagnostics.mounted ? "yes" : "no");
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line, sizeof(line), "State: %s", AxiomFS::filesystemStatusToString(diagnostics.status));
+    drawTextFit(m_display, line, x + 12, lineY, w - 24, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line, sizeof(line), "Mount: %s", AxiomFS::statusToString(diagnostics.mountStatus));
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line,
+                  sizeof(line),
+                  "Reason: %s",
+                  AxiomFS::mountFailureReasonToString(diagnostics.mountFailureReason));
+    drawTextFit(m_display, line, x + 12, lineY, w - 24, COLOR_MUTED);
+    lineY += kLineStep;
+
+    if (diagnostics.geometryKnown) {
+        std::snprintf(line, sizeof(line), "Flash: %lu B", static_cast<unsigned long>(diagnostics.flashSize));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+        std::snprintf(line, sizeof(line), "fs_offset: %lu", static_cast<unsigned long>(diagnostics.fsOffset));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+        std::snprintf(line, sizeof(line), "fs_size: %lu B", static_cast<unsigned long>(diagnostics.fsSize));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+        std::snprintf(line, sizeof(line), "Block: %lu B", static_cast<unsigned long>(diagnostics.blockSize));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+    } else {
+        m_display.drawText("Geometry: unavailable", x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+    }
+
+    if (diagnostics.spaceKnown) {
+        std::snprintf(line, sizeof(line), "Used: %llu B",
+                      static_cast<unsigned long long>(diagnostics.usedBytes));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+        lineY += kLineStep;
+        std::snprintf(line, sizeof(line), "Free: %llu B",
+                      static_cast<unsigned long long>(diagnostics.freeBytes));
+        m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    } else {
+        m_display.drawText("Space: unavailable", x + 12, lineY, COLOR_MUTED);
+    }
+
+    m_display.drawText("ENT/CLR return", x + 8, y + h - 14, COLOR_MUTED);
+}
+
+void SettingsApp::renderFilesystemCheck(int x, int y, int w, int h) {
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Filesystem Check", x + 8, y + 8, COLOR_TEXT);
+
+    char line[80] = {};
+    if (!m_hasProbeResult) {
+        m_display.drawText("No check result.", x + 12, y + 36, COLOR_WARN);
+        m_display.drawText("ENT/CLR return", x + 8, y + h - 14, COLOR_MUTED);
+        return;
+    }
+
+    int lineY = y + 34;
+    constexpr int kLineStep = 16;
+    std::snprintf(line, sizeof(line), "Probe: %s", AxiomFS::statusToString(m_probeResult.probeStatus));
+    m_display.drawText(line, x + 12, lineY, COLOR_TEXT);
+    lineY += kLineStep;
+    std::snprintf(line,
+                  sizeof(line),
+                  "Erased: %s",
+                  m_probeResult.erasedKnown ? (m_probeResult.erased ? "yes" : "no") : "unknown");
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line,
+                  sizeof(line),
+                  "Magic: %s",
+                  m_probeResult.magicKnown ? (m_probeResult.hasMagic ? "yes" : "no") : "unknown");
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line, sizeof(line), "Mount: %s", AxiomFS::statusToString(m_probeResult.mountStatus));
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line,
+                  sizeof(line),
+                  "Reason: %s",
+                  AxiomFS::mountFailureReasonToString(m_probeResult.mountFailureReason));
+    drawTextFit(m_display, line, x + 12, lineY, w - 24, COLOR_MUTED);
+    lineY += kLineStep;
+    std::snprintf(line,
+                  sizeof(line),
+                  "Mounted: %s -> %s",
+                  m_probeResult.mountedBeforeProbe ? "yes" : "no",
+                  m_probeResult.mountedAfterProbe ? "yes" : "no");
+    m_display.drawText(line, x + 12, lineY, COLOR_MUTED);
+
+    m_display.drawText("ENT/CLR return", x + 8, y + h - 14, COLOR_MUTED);
+}
+
+void SettingsApp::renderDeveloperFormatConfirm(int x, int y, int w, int h) {
+    (void)w;
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Format Filesystem", x + 8, y + 8, COLOR_TEXT);
+    m_display.drawText("Erase all AxiomFS files?", x + 20, y + 52, COLOR_WARN);
+    m_display.drawText("Then mount and restore dirs.", x + 20, y + 66, COLOR_WARN);
+    m_display.drawText("ENT = Confirm format", x + 20, y + 92, COLOR_TEXT);
+    m_display.drawText("CLR = Cancel", x + 20, y + 106, COLOR_MUTED);
+}
+
+void SettingsApp::renderEraseConfirm(int x, int y, int w, int h) {
+    (void)w;
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Erase Filesystem", x + 8, y + 8, COLOR_TEXT);
+    m_display.drawText("Erase entire FS region?", x + 20, y + 46, COLOR_WARN);
+    m_display.drawText("No format will run now.", x + 20, y + 60, COLOR_WARN);
+    m_display.drawText("Reboot after erase.", x + 20, y + 74, COLOR_WARN);
+    m_display.drawText("ENT = Confirm erase", x + 20, y + 100, COLOR_TEXT);
+    m_display.drawText("CLR = Cancel", x + 20, y + 114, COLOR_MUTED);
+}
+
 void SettingsApp::cycleSelected(int direction) {
-    switch (m_selectedIndex) {
-        case 0:
+    switch (mainItemAt(m_selectedIndex)) {
+        case MainItem::AngleMode:
             m_settings.angleMode = m_settings.angleMode == AngleMode::Radians
                 ? AngleMode::Degrees
                 : AngleMode::Radians;
             markChanged();
             break;
-        case 1:
+        case MainItem::GraphGrid:
             m_settings.graphGrid = !m_settings.graphGrid;
             markChanged();
             break;
-        case 2:
+        case MainItem::GraphAxes:
             m_settings.graphAxes = !m_settings.graphAxes;
             markChanged();
             break;
-        case 3: {
+        case MainItem::GraphResolution: {
             int value = static_cast<int>(m_settings.graphResolution) + direction;
             if (value < 0) value = 2;
             if (value > 2) value = 0;
@@ -537,7 +826,7 @@ void SettingsApp::cycleSelected(int direction) {
             markChanged();
             break;
         }
-        case 4: {
+        case MainItem::Theme: {
             int value = static_cast<int>(m_settings.theme) + direction;
             if (value < 0) value = 2;
             if (value > 2) value = 0;
@@ -545,7 +834,7 @@ void SettingsApp::cycleSelected(int direction) {
             markChanged();
             break;
         }
-        case 5: {
+        case MainItem::UiScale: {
             int value = static_cast<int>(m_settings.uiScale) + direction;
             if (value < 0) value = 2;
             if (value > 2) value = 0;
@@ -553,7 +842,7 @@ void SettingsApp::cycleSelected(int direction) {
             markChanged();
             break;
         }
-        case 9:
+        case MainItem::CalculatorPrecision:
             cyclePrecision(direction);
             break;
         default:
@@ -587,6 +876,60 @@ void SettingsApp::toggleDeveloperSelected() {
         default: break;
     }
     markChanged();
+}
+
+void SettingsApp::runDeveloperAction() {
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+    if (!m_filesystem) {
+        setDeveloperMessage("Storage backend unavailable.");
+        invalidateContent();
+        return;
+    }
+
+    switch (m_developerIndex) {
+        case 5:
+            std::printf("[settings][dev] filesystem status opened\n");
+            setDeveloperMessage("");
+            m_screen = Screen::FilesystemStatus;
+            invalidateContent();
+            return;
+        case 6: {
+            std::printf("[settings][dev] remount filesystem requested\n");
+            const AxiomFS::Status status = m_filesystem->remount();
+            char message[96] = {};
+            std::snprintf(message,
+                          sizeof(message),
+                          "Remount: %s",
+                          AxiomFS::statusToString(status));
+            setDeveloperMessage(message);
+            invalidateContent();
+            return;
+        }
+        case 7:
+            std::printf("[settings][dev] format filesystem prompt opened\n");
+            setDeveloperMessage("");
+            m_screen = Screen::DeveloperFormatConfirm;
+            invalidateContent();
+            return;
+        case 8:
+            std::printf("[settings][dev] erase filesystem prompt opened\n");
+            setDeveloperMessage("");
+            m_screen = Screen::EraseConfirm;
+            invalidateContent();
+            return;
+        case 9:
+            std::printf("[settings][dev] filesystem check requested\n");
+            m_probeResult = m_filesystem->runProbe();
+            m_hasProbeResult = true;
+            m_screen = Screen::FilesystemCheck;
+            invalidateContent();
+            return;
+        default:
+            break;
+    }
+#else
+    (void)this;
+#endif
 }
 
 void SettingsApp::runStorageAction() {
@@ -626,6 +969,13 @@ void SettingsApp::runStorageAction() {
 void SettingsApp::setStorageMessage(const char* message) {
     std::snprintf(m_storageMessage,
                   sizeof(m_storageMessage),
+                  "%s",
+                  message ? message : "");
+}
+
+void SettingsApp::setDeveloperMessage(const char* message) {
+    std::snprintf(m_developerMessage,
+                  sizeof(m_developerMessage),
                   "%s",
                   message ? message : "");
 }

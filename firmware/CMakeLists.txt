@@ -70,6 +70,9 @@ if(PLATFORM STREQUAL "host")
             PRIVATE
             expression_lib
     )
+    target_compile_definitions(calculator_app PRIVATE
+            MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
+    )
 elseif(PLATFORM STREQUAL "rp2350")
     target_sources(axiom_fs PRIVATE
             platform/rp2350/axiom_fs_flash_block_device.cpp
