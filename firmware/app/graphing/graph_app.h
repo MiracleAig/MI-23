@@ -2,12 +2,17 @@
 
 #include "app/graphing/graph_renderer.h"
 #include "app/settings/settings_state.h"
+#include "hal/fs/axiom_fs.h"
 #include "hal/keypad.h"
 
 enum class GraphMode {
     View,
     EditEquation,
     Trace,
+    StorageMenu,
+    LoadGraph,
+    DeleteGraph,
+    DeleteConfirm,
 };
 
 struct GraphWindow {
@@ -23,7 +28,8 @@ class GraphApp {
 public:
     static constexpr int FUNCTION_COUNT = 5;
 
-    explicit GraphApp(const SettingsState* settings = nullptr);
+    explicit GraphApp(const SettingsState* settings = nullptr,
+                      AxiomFS::FileSystem* filesystem = nullptr);
 
     void enter();
     void handleKey(Key key);
@@ -39,6 +45,10 @@ public:
     int selectedFunction() const;
     int editCursor() const;
     const GraphWindow& window() const;
+    bool saveCurrentGraph();
+    bool loadGraphFile(const char* fileName);
+    bool deleteGraphFile(const char* fileName);
+    const char* statusMessage() const;
 
 private:
     static constexpr int MAX_EXPRESSION_LENGTH = 63;
@@ -50,6 +60,7 @@ private:
 
     GraphRenderer m_renderer;
     const SettingsState* m_settings;
+    AxiomFS::FileSystem* m_filesystem;
     GraphMode m_mode;
     bool m_needsRender;
     DirtyRegionList m_dirtyRegions;
@@ -61,6 +72,12 @@ private:
     int m_editCursor;
     int m_selectedFunction;
     GraphWindow m_window;
+    char m_sessionName[40];
+    char m_statusMessage[80];
+    AxiomFS::ListResult m_graphFiles;
+    int m_storageMenuIndex;
+    int m_graphFileIndex;
+    bool m_graphFileListDirty;
     double m_traceX;
     double m_traceY;
     bool m_traceHasPoint;
@@ -78,6 +95,13 @@ private:
     void moveCursor(int delta);
     void zoom(double factor);
     void resetWindow();
+    void resetGraphSession();
+    void openStorageMenu();
+    void refreshGraphFileList();
+    void handleStorageMenuKey(Key key);
+    void handleGraphFileListKey(Key key, bool deleting);
+    void applyLoadedSession(const struct GraphSessionData& session, const char* fileName);
+    struct GraphSessionData buildCurrentSession() const;
     void refreshWindowScales();
     void startTrace(int direction);
     void moveTrace(int direction);
@@ -88,6 +112,9 @@ private:
     void buildRenderFunctions(GraphFunction* functions) const;
     void renderGraph(Display& display, int x, int y, int w, int h);
     void renderEditor(Display& display, int x, int y, int w, int h);
+    void renderStorageMenu(Display& display, int x, int y, int w, int h);
+    void renderGraphFileList(Display& display, int x, int y, int w, int h, bool deleting);
+    void renderDeleteConfirm(Display& display, int x, int y, int w, int h);
     void renderTraceOverlay(Display& display, const GraphViewport& viewport, int x, int y, int w, int h);
     DisplayRect contentBounds() const;
     DisplayRect graphViewportRect() const;

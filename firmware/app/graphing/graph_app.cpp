@@ -1,5 +1,6 @@
 #include "app/graphing/graph_app.h"
 
+#include "app/graphing/graph_storage.h"
 #include "math/expression.h"
 
 #include <cmath>
@@ -16,6 +17,7 @@ const Color COLOR_MUTED = Display::rgb(150, 160, 172);
 const Color COLOR_ERROR = Display::rgb(255, 110, 110);
 const Color COLOR_CURSOR = Display::rgb(255, 230, 95);
 const Color COLOR_TRACE = Display::rgb(255, 255, 255);
+const Color COLOR_WARN = Display::rgb(255, 180, 80);
 
 constexpr GraphWindow DEFAULT_WINDOW = {
     -10.0,
@@ -33,6 +35,14 @@ constexpr Color FUNCTION_COLORS[GraphApp::FUNCTION_COUNT] = {
     Display::rgb(255, 145, 95),
     Display::rgb(225, 135, 255),
 };
+
+constexpr const char* STORAGE_ACTIONS[] = {
+    "Save Graph",
+    "Load Graph",
+    "Delete Graph",
+    "New Graph",
+};
+constexpr int STORAGE_ACTION_COUNT = static_cast<int>(sizeof(STORAGE_ACTIONS) / sizeof(STORAGE_ACTIONS[0]));
 
 bool isSyntaxError(GraphErrorType error) {
     return error == GraphErrorType::InvalidExpression ||
@@ -125,9 +135,10 @@ const char* textForKey(Key key) {
 
 } // namespace
 
-GraphApp::GraphApp(const SettingsState* settings)
+GraphApp::GraphApp(const SettingsState* settings, AxiomFS::FileSystem* filesystem)
     : m_renderer()
     , m_settings(settings)
+    , m_filesystem(filesystem)
     , m_mode(GraphMode::View)
     , m_needsRender(true)
     , m_dirtyRegions()
@@ -139,6 +150,12 @@ GraphApp::GraphApp(const SettingsState* settings)
     , m_editCursor(0)
     , m_selectedFunction(0)
     , m_window(DEFAULT_WINDOW)
+    , m_sessionName{}
+    , m_statusMessage{}
+    , m_graphFiles()
+    , m_storageMenuIndex(0)
+    , m_graphFileIndex(0)
+    , m_graphFileListDirty(true)
     , m_traceX(0.0)
     , m_traceY(0.0)
     , m_traceHasPoint(false)
@@ -147,6 +164,7 @@ GraphApp::GraphApp(const SettingsState* settings)
              GraphRenderer::DEFAULT_EXPRESSION,
              MAX_EXPRESSION_LENGTH + 1);
     m_functions[0].enabled = true;
+    copyText(m_sessionName, "Graph", static_cast<int>(sizeof(m_sessionName)));
     m_renderer.setExpression(m_functions[0].expression);
 }
 
@@ -165,6 +183,8 @@ void GraphApp::handleKey(Key key) {
     if (m_mode == GraphMode::View) {
         if (key == Key::ENTER) {
             enterEditMode();
+        } else if (key == Key::DELETE_KEY) {
+            openStorageMenu();
         } else if (key == Key::PLUS || key == Key::CURSOR_UP) {
             zoom(0.5);
         } else if (key == Key::MINUS || key == Key::CURSOR_DOWN) {
@@ -175,6 +195,44 @@ void GraphApp::handleKey(Key key) {
             startTrace(-1);
         } else if (key == Key::CURSOR_RIGHT) {
             startTrace(1);
+        }
+        return;
+    }
+
+    if (m_mode == GraphMode::StorageMenu) {
+        handleStorageMenuKey(key);
+        return;
+    }
+
+    if (m_mode == GraphMode::LoadGraph) {
+        handleGraphFileListKey(key, false);
+        return;
+    }
+
+    if (m_mode == GraphMode::DeleteGraph) {
+        handleGraphFileListKey(key, true);
+        return;
+    }
+
+    if (m_mode == GraphMode::DeleteConfirm) {
+        if (key == Key::ENTER) {
+            const AxiomFS::DirectoryEntry* entry =
+                (m_graphFileIndex >= 0 && m_graphFileIndex < static_cast<int>(m_graphFiles.entries.size()))
+                    ? &m_graphFiles.entries[m_graphFileIndex]
+                    : nullptr;
+            if (entry && deleteGraphFile(entry->name.c_str())) {
+                std::snprintf(m_statusMessage, sizeof(m_statusMessage), "Deleted %s", entry->name.c_str());
+            } else {
+                copyText(m_statusMessage, "Delete failed", static_cast<int>(sizeof(m_statusMessage)));
+            }
+            m_graphFileListDirty = true;
+            m_mode = GraphMode::StorageMenu;
+            invalidateContent();
+            requestRender();
+        } else if (key == Key::CLEAR) {
+            m_mode = GraphMode::DeleteGraph;
+            invalidateContent();
+            requestRender();
         }
         return;
     }
@@ -248,6 +306,14 @@ void GraphApp::renderContent(Display& display, int x, int y, int w, int h) {
         display.setClipRect(clip);
         if (m_mode == GraphMode::EditEquation) {
             renderEditor(display, x, y, w, h);
+        } else if (m_mode == GraphMode::StorageMenu) {
+            renderStorageMenu(display, x, y, w, h);
+        } else if (m_mode == GraphMode::LoadGraph) {
+            renderGraphFileList(display, x, y, w, h, false);
+        } else if (m_mode == GraphMode::DeleteGraph) {
+            renderGraphFileList(display, x, y, w, h, true);
+        } else if (m_mode == GraphMode::DeleteConfirm) {
+            renderDeleteConfirm(display, x, y, w, h);
         } else {
             renderGraph(display, x, y, w, h);
         }
@@ -298,6 +364,61 @@ int GraphApp::editCursor() const {
 
 const GraphWindow& GraphApp::window() const {
     return m_window;
+}
+
+bool GraphApp::saveCurrentGraph() {
+    if (!m_filesystem) {
+        copyText(m_statusMessage, "Storage unavailable", static_cast<int>(sizeof(m_statusMessage)));
+        return false;
+    }
+
+    std::string savedName;
+    if (!GraphSessionStorage::save(*m_filesystem,
+                                   m_sessionName,
+                                   buildCurrentSession(),
+                                   &savedName)) {
+        copyText(m_statusMessage, "Save failed", static_cast<int>(sizeof(m_statusMessage)));
+        return false;
+    }
+
+    copyText(m_sessionName,
+             savedName.c_str(),
+             static_cast<int>(sizeof(m_sessionName)));
+    std::snprintf(m_statusMessage, sizeof(m_statusMessage), "Saved %s", savedName.c_str());
+    m_graphFileListDirty = true;
+    return true;
+}
+
+bool GraphApp::loadGraphFile(const char* fileName) {
+    if (!m_filesystem || !fileName) {
+        copyText(m_statusMessage, "Storage unavailable", static_cast<int>(sizeof(m_statusMessage)));
+        return false;
+    }
+
+    GraphSessionData session;
+    if (!GraphSessionStorage::load(*m_filesystem, fileName, session)) {
+        copyText(m_statusMessage, "Load failed", static_cast<int>(sizeof(m_statusMessage)));
+        return false;
+    }
+
+    applyLoadedSession(session, fileName);
+    std::snprintf(m_statusMessage, sizeof(m_statusMessage), "Loaded %s", fileName);
+    return true;
+}
+
+bool GraphApp::deleteGraphFile(const char* fileName) {
+    if (!m_filesystem || !fileName) {
+        return false;
+    }
+    const bool deleted = GraphSessionStorage::deleteFile(*m_filesystem, fileName);
+    if (deleted) {
+        m_graphFileListDirty = true;
+    }
+    return deleted;
+}
+
+const char* GraphApp::statusMessage() const {
+    return m_statusMessage;
 }
 
 void GraphApp::enterEditMode() {
@@ -501,6 +622,144 @@ void GraphApp::resetWindow() {
     requestRender();
 }
 
+void GraphApp::resetGraphSession() {
+    for (int i = 0; i < FUNCTION_COUNT; ++i) {
+        m_functions[i].expression[0] = '\0';
+        m_functions[i].enabled = false;
+    }
+    copyText(m_functions[0].expression,
+             GraphRenderer::DEFAULT_EXPRESSION,
+             MAX_EXPRESSION_LENGTH + 1);
+    m_functions[0].enabled = true;
+    m_renderer.setExpression(m_functions[0].expression);
+    copyText(m_sessionName, "Graph", static_cast<int>(sizeof(m_sessionName)));
+    resetWindow();
+    m_mode = GraphMode::View;
+    copyText(m_statusMessage, "New graph", static_cast<int>(sizeof(m_statusMessage)));
+    invalidateContent();
+    requestRender();
+}
+
+void GraphApp::openStorageMenu() {
+    m_storageMenuIndex = 0;
+    m_mode = GraphMode::StorageMenu;
+    invalidateContent();
+    requestRender();
+}
+
+void GraphApp::refreshGraphFileList() {
+    if (!m_filesystem) {
+        m_graphFiles.status = AxiomFS::Status::NotMounted;
+        m_graphFiles.entries.clear();
+    } else {
+        m_graphFiles = GraphSessionStorage::list(*m_filesystem);
+    }
+    if (m_graphFileIndex >= static_cast<int>(m_graphFiles.entries.size())) {
+        m_graphFileIndex = std::max(0, static_cast<int>(m_graphFiles.entries.size()) - 1);
+    }
+    m_graphFileListDirty = false;
+}
+
+void GraphApp::handleStorageMenuKey(Key key) {
+    if (key == Key::CLEAR) {
+        m_mode = GraphMode::View;
+        invalidateContent();
+        requestRender();
+        return;
+    }
+    if (key == Key::CURSOR_UP) {
+        m_storageMenuIndex = (m_storageMenuIndex + STORAGE_ACTION_COUNT - 1) % STORAGE_ACTION_COUNT;
+    } else if (key == Key::CURSOR_DOWN) {
+        m_storageMenuIndex = (m_storageMenuIndex + 1) % STORAGE_ACTION_COUNT;
+    } else if (key == Key::ENTER) {
+        if (m_storageMenuIndex == 0) {
+            (void)saveCurrentGraph();
+        } else if (m_storageMenuIndex == 1) {
+            refreshGraphFileList();
+            m_mode = GraphMode::LoadGraph;
+        } else if (m_storageMenuIndex == 2) {
+            refreshGraphFileList();
+            m_mode = GraphMode::DeleteGraph;
+        } else if (m_storageMenuIndex == 3) {
+            resetGraphSession();
+        }
+    }
+    invalidateContent();
+    requestRender();
+}
+
+void GraphApp::handleGraphFileListKey(Key key, bool deleting) {
+    if (m_graphFileListDirty) {
+        refreshGraphFileList();
+    }
+    if (key == Key::CLEAR) {
+        m_mode = GraphMode::StorageMenu;
+    } else if (key == Key::CURSOR_UP && !m_graphFiles.entries.empty()) {
+        m_graphFileIndex = (m_graphFileIndex + static_cast<int>(m_graphFiles.entries.size()) - 1)
+            % static_cast<int>(m_graphFiles.entries.size());
+    } else if (key == Key::CURSOR_DOWN && !m_graphFiles.entries.empty()) {
+        m_graphFileIndex = (m_graphFileIndex + 1) % static_cast<int>(m_graphFiles.entries.size());
+    } else if (key == Key::ENTER && !m_graphFiles.entries.empty()) {
+        const AxiomFS::DirectoryEntry& entry = m_graphFiles.entries[m_graphFileIndex];
+        if (deleting) {
+            m_mode = GraphMode::DeleteConfirm;
+        } else {
+            if (loadGraphFile(entry.name.c_str())) {
+                m_mode = GraphMode::View;
+            }
+        }
+    }
+    invalidateContent();
+    requestRender();
+}
+
+void GraphApp::applyLoadedSession(const GraphSessionData& session, const char* fileName) {
+    for (int i = 0; i < FUNCTION_COUNT; ++i) {
+        m_functions[i].expression[0] = '\0';
+        m_functions[i].enabled = false;
+    }
+
+    const int count = std::min(FUNCTION_COUNT, static_cast<int>(session.functions.size()));
+    for (int i = 0; i < count; ++i) {
+        copyText(m_functions[i].expression,
+                 session.functions[i].expression.c_str(),
+                 MAX_EXPRESSION_LENGTH + 1);
+        m_functions[i].enabled = session.functions[i].enabled &&
+            m_functions[i].expression[0] != '\0';
+    }
+    if (count == 0) {
+        copyText(m_functions[0].expression,
+                 GraphRenderer::DEFAULT_EXPRESSION,
+                 MAX_EXPRESSION_LENGTH + 1);
+        m_functions[0].enabled = true;
+    }
+
+    m_window = session.window;
+    refreshWindowScales();
+    m_renderer.setExpression(m_functions[0].expression);
+    m_selectedFunction = 0;
+    copyText(m_sessionName,
+             session.name.empty() ? (fileName ? fileName : "Graph") : session.name.c_str(),
+             static_cast<int>(sizeof(m_sessionName)));
+    m_mode = GraphMode::View;
+    invalidateContent();
+    requestRender();
+}
+
+GraphSessionData GraphApp::buildCurrentSession() const {
+    GraphSessionData session;
+    session.name = m_sessionName;
+    session.window = m_window;
+    session.angleRadians = !(m_settings && m_settings->angleMode == AngleMode::Degrees);
+    for (int i = 0; i < FUNCTION_COUNT; ++i) {
+        GraphSessionFunction function;
+        function.expression = m_functions[i].expression;
+        function.enabled = m_functions[i].enabled;
+        session.functions.push_back(function);
+    }
+    return session;
+}
+
 void GraphApp::refreshWindowScales() {
     m_window.xScale = niceGridScale(m_window.xMin, m_window.xMax);
     m_window.yScale = niceGridScale(m_window.yMin, m_window.yMax);
@@ -674,9 +933,105 @@ void GraphApp::renderGraph(Display& display, int x, int y, int w, int h) {
     } else if (m_mode == GraphMode::Trace) {
         display.drawText("Trace: left/right, up/down Y", x + 8, y + h - 20, COLOR_MUTED);
     } else {
-        display.drawText("Enter edit  +/- zoom  Clear reset", x + 8, y + h - 20, COLOR_MUTED);
+        display.drawText("Enter edit  +/- zoom  DEL files", x + 8, y + h - 20, COLOR_MUTED);
     }
     display.drawText("Arrows trace/zoom", x + 8, y + h - 10, COLOR_MUTED);
+}
+
+void GraphApp::renderStorageMenu(Display& display, int x, int y, int w, int h) {
+    display.fillRect(x, y, w, h, COLOR_BG);
+    display.drawText("Graph Storage", x + 8, y + 8, COLOR_TEXT);
+
+    const int rowHeight = 20;
+    const int listY = y + 32;
+    for (int i = 0; i < STORAGE_ACTION_COUNT; ++i) {
+        const int rowY = listY + i * rowHeight;
+        const bool selected = i == m_storageMenuIndex;
+        display.fillRect(x + 6,
+                         rowY - 4,
+                         w - 12,
+                         rowHeight,
+                         selected ? COLOR_PANEL_SELECTED : COLOR_PANEL);
+        if (selected) {
+            display.fillRect(x + 6, rowY - 4, 3, rowHeight, COLOR_CURSOR);
+        }
+        display.drawText(STORAGE_ACTIONS[i],
+                         x + 14,
+                         rowY,
+                         selected ? COLOR_TEXT : COLOR_MUTED);
+    }
+
+    if (m_statusMessage[0] != '\0') {
+        drawTextFit(display, m_statusMessage, x + 8, y + h - 32, w - 16, COLOR_WARN);
+    }
+    display.drawText("ENT select  CLR back", x + 8, y + h - 14, COLOR_MUTED);
+}
+
+void GraphApp::renderGraphFileList(Display& display, int x, int y, int w, int h, bool deleting) {
+    if (m_graphFileListDirty) {
+        refreshGraphFileList();
+    }
+    display.fillRect(x, y, w, h, COLOR_BG);
+    display.drawText(deleting ? "Delete Graph" : "Load Graph", x + 8, y + 8, COLOR_TEXT);
+
+    if (!m_graphFiles.ok()) {
+        char status[64] = {};
+        std::snprintf(status, sizeof(status), "Storage: %s", AxiomFS::statusToString(m_graphFiles.status));
+        display.drawText(status, x + 12, y + 42, COLOR_ERROR);
+        display.drawText("CLR back", x + 8, y + h - 14, COLOR_MUTED);
+        return;
+    }
+    if (m_graphFiles.entries.empty()) {
+        display.drawText("No saved graphs", x + 12, y + 42, COLOR_MUTED);
+        display.drawText("CLR back", x + 8, y + h - 14, COLOR_MUTED);
+        return;
+    }
+
+    const int rowHeight = 18;
+    const int listY = y + 30;
+    const int visibleRows = std::max(1, (h - 54) / rowHeight);
+    int first = 0;
+    if (m_graphFileIndex >= visibleRows) {
+        first = m_graphFileIndex - visibleRows + 1;
+    }
+
+    for (int row = 0; row < visibleRows && first + row < static_cast<int>(m_graphFiles.entries.size()); ++row) {
+        const int index = first + row;
+        const int rowY = listY + row * rowHeight;
+        const bool selected = index == m_graphFileIndex;
+        display.fillRect(x + 6,
+                         rowY - 3,
+                         w - 12,
+                         rowHeight,
+                         selected ? COLOR_PANEL_SELECTED : COLOR_PANEL);
+        if (selected) {
+            display.fillRect(x + 6, rowY - 3, 3, rowHeight, COLOR_CURSOR);
+        }
+        drawTextFit(display,
+                    m_graphFiles.entries[index].name.c_str(),
+                    x + 14,
+                    rowY,
+                    w - 28,
+                    selected ? COLOR_TEXT : COLOR_MUTED);
+    }
+
+    display.drawText("ENT select  CLR back", x + 8, y + h - 14, COLOR_MUTED);
+}
+
+void GraphApp::renderDeleteConfirm(Display& display, int x, int y, int w, int h) {
+    display.fillRect(x, y, w, h, COLOR_BG);
+    display.drawText("Delete Graph", x + 8, y + 8, COLOR_TEXT);
+    display.drawText("Delete selected graph?", x + 20, y + 52, COLOR_WARN);
+    if (m_graphFileIndex >= 0 && m_graphFileIndex < static_cast<int>(m_graphFiles.entries.size())) {
+        drawTextFit(display,
+                    m_graphFiles.entries[m_graphFileIndex].name.c_str(),
+                    x + 20,
+                    y + 66,
+                    w - 40,
+                    COLOR_TEXT);
+    }
+    display.drawText("ENT = Confirm", x + 20, y + 92, COLOR_TEXT);
+    display.drawText("CLR = Cancel", x + 20, y + 106, COLOR_MUTED);
 }
 
 void GraphApp::renderEditor(Display& display, int x, int y, int w, int h) {

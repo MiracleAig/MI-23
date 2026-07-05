@@ -154,7 +154,9 @@ TEST(HostStartupBackend, MissingFilesystemDirectoriesAreRecreated) {
 
     const StartupCheckResult resourceResult = backend.verifyResources(settings);
     EXPECT_TRUE(resourceResult.ok);
-    EXPECT_TRUE(std::filesystem::is_directory(root / "state" / "logs"));
+    bool logsExists = false;
+    EXPECT_EQ(backend.filesystem().exists("logs", logsExists), AxiomFS::Status::Ok);
+    EXPECT_TRUE(logsExists);
 }
 
 TEST(HostStartupBackend, UnrecoverableStorageFailureFallsBackSafely) {

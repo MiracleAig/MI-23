@@ -2,8 +2,11 @@
 
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
+#include "platform/host/axiom_fs_host.h"
 
 #include "hal/display.h"
+
+#include <filesystem>
 
 class SettingsNullDisplay : public Display {
 public:
@@ -97,4 +100,37 @@ TEST(SettingsApp, DeveloperOptionsToggleInSubmenu) {
 
     app.handleKey(Key::CLEAR); // Back to main settings
     EXPECT_TRUE(app.handleKey(Key::CLEAR)); // return-to-home request for caller
+}
+
+TEST(SettingsApp, FormatStorageInitializesFilesystemLayout) {
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "mi23_settings_storage_tests";
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+
+    SettingsNullDisplay display;
+    SettingsState settings;
+    HostAxiomFSBackend backend(root);
+    AxiomFS::FileSystem fs(backend);
+    ASSERT_EQ(fs.mount(), AxiomFS::Status::Ok);
+    ASSERT_EQ(fs.writeFile("graphs/old.mi23graph", "old"), AxiomFS::Status::Ok);
+
+    SettingsApp app(display, settings, "Simulator", &fs);
+    app.enter();
+    for (int i = 0; i < 10; ++i) {
+        app.handleKey(Key::CURSOR_DOWN);
+    }
+    app.handleKey(Key::ENTER); // Storage Manager
+    app.handleKey(Key::CURSOR_DOWN);
+    app.handleKey(Key::CURSOR_DOWN);
+    app.handleKey(Key::ENTER); // Format storage confirmation
+    app.handleKey(Key::ENTER); // Confirm format
+
+    EXPECT_EQ(AxiomFS::getLastHealthResult().status, AxiomFS::FilesystemStatus::Healthy);
+    for (int i = 0; i < AxiomFS::defaultDirectoryCount(); ++i) {
+        EXPECT_TRUE(std::filesystem::is_directory(root / AxiomFS::defaultDirectories()[i]));
+    }
+    EXPECT_FALSE(std::filesystem::exists(root / "graphs" / "old.mi23graph"));
+
+    std::filesystem::remove_all(root, error);
 }

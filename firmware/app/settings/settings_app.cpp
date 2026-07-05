@@ -14,8 +14,9 @@ const Color COLOR_MUTED = Display::rgb(150, 160, 172);
 const Color COLOR_FOCUS = Display::rgb(255, 230, 95);
 const Color COLOR_WARN = Display::rgb(255, 180, 80);
 
-constexpr int MAIN_ITEM_COUNT = 10;
+constexpr int MAIN_ITEM_COUNT = 11;
 constexpr int DEV_ITEM_COUNT = 5;
+constexpr int STORAGE_ACTION_COUNT = 3;
 constexpr int PRECISION_VALUES[] = {3, 6, 9, 12};
 
 const char* onOffLabel(bool value) {
@@ -58,6 +59,7 @@ const char* mainLabel(int index) {
         case 7: return "Reset Settings";
         case 8: return "Developer Options";
         case 9: return "Calculator Precision";
+        case 10: return "Storage Manager";
         default: return "";
     }
 }
@@ -96,13 +98,17 @@ const char* buildTypeLabel() {
 
 SettingsApp::SettingsApp(Display& display,
                          SettingsState& settings,
-                         const char* platformName)
+                         const char* platformName,
+                         AxiomFS::FileSystem* filesystem)
     : m_display(display)
     , m_settings(settings)
     , m_platformName(platformName)
+    , m_filesystem(filesystem)
     , m_screen(Screen::Main)
     , m_selectedIndex(0)
     , m_developerIndex(0)
+    , m_storageIndex(0)
+    , m_storageMessage{}
     , m_dirty(false)
     , m_saveRequested(false)
     , m_needsRender(true)
@@ -112,6 +118,8 @@ void SettingsApp::enter() {
     m_screen = Screen::Main;
     m_selectedIndex = 0;
     m_developerIndex = 0;
+    m_storageIndex = 0;
+    setStorageMessage("");
     m_saveRequested = false;
     invalidateContent();
     requestRender();
@@ -138,6 +146,52 @@ bool SettingsApp::handleKey(Key key) {
             invalidateContent();
         } else if (key == Key::CLEAR) {
             m_screen = Screen::Main;
+            invalidateContent();
+        }
+        requestRender();
+        return false;
+    }
+
+    if (m_screen == Screen::FormatConfirm) {
+        if (key == Key::ENTER) {
+            if (m_filesystem) {
+                const AxiomFS::HealthResult health = AxiomFS::formatAndInitialize(*m_filesystem);
+                if (health.status == AxiomFS::FilesystemStatus::Healthy) {
+                    setStorageMessage("Storage formatted and ready.");
+                } else {
+                    char message[96] = {};
+                    std::snprintf(message,
+                                  sizeof(message),
+                                  "Format failed: %s",
+                                  AxiomFS::filesystemStatusToString(health.status));
+                    setStorageMessage(message);
+                }
+            } else {
+                setStorageMessage("Storage backend unavailable.");
+            }
+            m_screen = Screen::Storage;
+            invalidateContent();
+        } else if (key == Key::CLEAR) {
+            m_screen = Screen::Storage;
+            invalidateContent();
+        }
+        requestRender();
+        return false;
+    }
+
+    if (m_screen == Screen::Storage) {
+        const int oldStorageIndex = m_storageIndex;
+        if (key == Key::CLEAR) {
+            m_screen = Screen::Main;
+            invalidateContent();
+        } else if (key == Key::CURSOR_UP) {
+            m_storageIndex = (m_storageIndex + STORAGE_ACTION_COUNT - 1) % STORAGE_ACTION_COUNT;
+        } else if (key == Key::CURSOR_DOWN) {
+            m_storageIndex = (m_storageIndex + 1) % STORAGE_ACTION_COUNT;
+        } else if (key == Key::ENTER) {
+            runStorageAction();
+        }
+        if (oldStorageIndex != m_storageIndex) {
             invalidateContent();
         }
         requestRender();
@@ -196,6 +250,8 @@ bool SettingsApp::handleKey(Key key) {
                 m_screen = Screen::ResetConfirm;
             } else if (m_selectedIndex == 8) {
                 m_screen = Screen::Developer;
+            } else if (m_selectedIndex == 10) {
+                m_screen = Screen::Storage;
             } else {
                 cycleSelected(1);
             }
@@ -242,6 +298,10 @@ void SettingsApp::renderContent(int x, int y, int w, int h) {
             renderDeveloper(x, y, w, h);
         } else if (m_screen == Screen::ResetConfirm) {
             renderResetConfirm(x, y, w, h);
+        } else if (m_screen == Screen::Storage) {
+            renderStorage(x, y, w, h);
+        } else if (m_screen == Screen::FormatConfirm) {
+            renderFormatConfirm(x, y, w, h);
         } else {
             renderMain(x, y, w, h);
         }
@@ -313,6 +373,7 @@ void SettingsApp::renderMain(int x, int y, int w, int h) {
             case 7: std::snprintf(value, sizeof(value), "Open"); break;
             case 8: std::snprintf(value, sizeof(value), "Open"); break;
             case 9: std::snprintf(value, sizeof(value), "%d dp", m_settings.calculatorPrecision); break;
+            case 10: std::snprintf(value, sizeof(value), "Open"); break;
             default: break;
         }
 
@@ -332,6 +393,7 @@ void SettingsApp::renderAbout(int x, int y, int w, int h) {
     m_display.drawText("Project: MI-23", x + 12, y + 32, COLOR_TEXT);
     m_display.drawText("App: Settings", x + 12, y + 46, COLOR_TEXT);
     m_display.drawText("Version: dev", x + 12, y + 60, COLOR_MUTED);
+    m_display.drawText(AxiomFS::releaseLabel(), x + 12, y + 102, COLOR_WARN);
 
     char platform[48] = {};
     std::snprintf(platform, sizeof(platform), "Platform: %s", m_platformName ? m_platformName : "Unknown");
@@ -382,6 +444,72 @@ void SettingsApp::renderResetConfirm(int x, int y, int w, int h) {
     m_display.drawText("Reset Settings", x + 8, y + 8, COLOR_TEXT);
     m_display.drawText("Reset all settings?", x + 20, y + 52, COLOR_WARN);
     m_display.drawText("ENT = Confirm", x + 20, y + 78, COLOR_TEXT);
+    m_display.drawText("CLR = Cancel", x + 20, y + 92, COLOR_MUTED);
+}
+
+void SettingsApp::renderStorage(int x, int y, int w, int h) {
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Storage Manager", x + 8, y + 8, COLOR_TEXT);
+
+    const AxiomFS::HealthResult& health = AxiomFS::getLastHealthResult();
+    AxiomFS::StorageStats stats;
+    if (m_filesystem) {
+        stats = AxiomFS::getStorageStats(*m_filesystem);
+    }
+
+    char line[64] = {};
+    const AxiomFS::FilesystemStatus displayStatus = m_filesystem
+        ? health.status
+        : AxiomFS::FilesystemStatus::NotMounted;
+    std::snprintf(line, sizeof(line), "Status: %s", AxiomFS::filesystemStatusToString(displayStatus));
+    m_display.drawText(line, x + 12, y + 30, COLOR_TEXT);
+    std::snprintf(line, sizeof(line), "Backend: %s", m_filesystem ? m_filesystem->backendName() : "None");
+    m_display.drawText(line, x + 12, y + 44, COLOR_MUTED);
+
+    if (stats.queryStatus == AxiomFS::Status::Ok) {
+        std::snprintf(line, sizeof(line), "Total: %llu B", static_cast<unsigned long long>(stats.totalBytes));
+        m_display.drawText(line, x + 12, y + 58, COLOR_MUTED);
+        std::snprintf(line, sizeof(line), "Used: %llu B", static_cast<unsigned long long>(stats.usedBytes));
+        m_display.drawText(line, x + 12, y + 72, COLOR_MUTED);
+        std::snprintf(line, sizeof(line), "Free: %llu B", static_cast<unsigned long long>(stats.freeBytes));
+        m_display.drawText(line, x + 12, y + 86, COLOR_MUTED);
+        if (stats.fileCount >= 0) {
+            std::snprintf(line, sizeof(line), "Files: %d", stats.fileCount);
+            m_display.drawText(line, x + 12, y + 100, COLOR_MUTED);
+        }
+    } else {
+        std::snprintf(line, sizeof(line), "Space: %s", AxiomFS::statusToString(stats.queryStatus));
+        m_display.drawText(line, x + 12, y + 58, COLOR_WARN);
+    }
+    if (m_storageMessage[0] != '\0') {
+        drawTextFit(m_display, m_storageMessage, x + 12, y + 108, w - 24, COLOR_WARN);
+    } else if (!health.detail.empty()) {
+        drawTextFit(m_display, health.detail.c_str(), x + 12, y + 108, w - 24, COLOR_MUTED);
+    }
+
+    const char* actions[] = {"Remount filesystem", "Run filesystem check", "Format storage"};
+    const int actionY = y + 126;
+    for (int i = 0; i < STORAGE_ACTION_COUNT; ++i) {
+        const int rowY = actionY + i * 18;
+        const bool selected = i == m_storageIndex;
+        m_display.fillRect(x + 6, rowY - 3, w - 12, 17,
+                           selected ? COLOR_PANEL_SELECTED : COLOR_PANEL);
+        if (selected) {
+            m_display.fillRect(x + 6, rowY - 3, 3, 17, COLOR_FOCUS);
+        }
+        m_display.drawText(actions[i], x + 14, rowY,
+                           (selected || i == 2) ? (i == 2 ? COLOR_WARN : COLOR_TEXT) : COLOR_MUTED);
+    }
+
+    m_display.drawText("ENT action  CLR back", x + 8, y + h - 14, COLOR_MUTED);
+}
+
+void SettingsApp::renderFormatConfirm(int x, int y, int w, int h) {
+    (void)w;
+    m_display.fillRect(x, y, w, h, COLOR_BG);
+    m_display.drawText("Format Storage", x + 8, y + 8, COLOR_TEXT);
+    m_display.drawText("Erase all AxiomFS files?", x + 20, y + 52, COLOR_WARN);
+    m_display.drawText("ENT = Confirm format", x + 20, y + 78, COLOR_TEXT);
     m_display.drawText("CLR = Cancel", x + 20, y + 92, COLOR_MUTED);
 }
 
@@ -459,6 +587,47 @@ void SettingsApp::toggleDeveloperSelected() {
         default: break;
     }
     markChanged();
+}
+
+void SettingsApp::runStorageAction() {
+    if (!m_filesystem) {
+        setStorageMessage("Storage backend unavailable.");
+        invalidateContent();
+        return;
+    }
+
+    if (m_storageIndex == 0) {
+        const AxiomFS::HealthResult& health = AxiomFS::getLastHealthResult();
+        if (health.status == AxiomFS::FilesystemStatus::Unformatted ||
+            health.mountFailureReason == AxiomFS::MountFailureReason::NotFormatted) {
+            setStorageMessage("Storage is unformatted. Format storage first.");
+            invalidateContent();
+            return;
+        }
+        (void)m_filesystem->mount();
+        const AxiomFS::HealthResult check = AxiomFS::runHealthCheck(*m_filesystem);
+        setStorageMessage(check.status == AxiomFS::FilesystemStatus::Healthy
+            ? "Storage remounted."
+            : AxiomFS::filesystemStatusToString(check.status));
+        invalidateContent();
+    } else if (m_storageIndex == 1) {
+        const AxiomFS::HealthResult check = AxiomFS::runHealthCheck(*m_filesystem);
+        setStorageMessage(check.status == AxiomFS::FilesystemStatus::Healthy
+            ? "Filesystem check passed."
+            : AxiomFS::filesystemStatusToString(check.status));
+        invalidateContent();
+    } else if (m_storageIndex == 2) {
+        setStorageMessage("");
+        m_screen = Screen::FormatConfirm;
+        invalidateContent();
+    }
+}
+
+void SettingsApp::setStorageMessage(const char* message) {
+    std::snprintf(m_storageMessage,
+                  sizeof(m_storageMessage),
+                  "%s",
+                  message ? message : "");
 }
 
 void SettingsApp::markChanged() {

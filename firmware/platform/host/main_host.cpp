@@ -10,6 +10,7 @@
 #include "app/boot/boot_manager.h"
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
+#include "app/files/file_browser_app.h"
 #include "app/graphing/graph_app.h"
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
@@ -19,10 +20,11 @@
 #include <cstdio>
 
 namespace {
-CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings) {
+CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings, AxiomFS::FileSystem* filesystem) {
     CalculatorAppConfig config;
     config.showOnScreenKeypad = false;
     config.settings = &settings;
+    config.filesystem = filesystem;
     return config;
 }
 
@@ -39,10 +41,11 @@ public:
         , m_startup(m_keypad, m_settingsStore)
         , m_boot(display, m_settings, m_startup)
         , m_home(display)
-        , m_calculator(display, keypad, hostCalculatorConfig(m_settings))
+        , m_calculator(display, keypad, hostCalculatorConfig(m_settings, &m_startup.filesystem()))
+        , m_files(display, &m_startup.filesystem())
         , m_simulatorKeypad()
-        , m_graph(&m_settings)
-        , m_settingsApp(display, m_settings, "Simulator")
+        , m_graph(&m_settings, &m_startup.filesystem())
+        , m_settingsApp(display, m_settings, "Simulator", &m_startup.filesystem())
         , m_activeApp(AppId::Boot)
         , m_needsFrame(true)
         , m_shellDirty(true)
@@ -106,6 +109,9 @@ public:
         if (m_activeApp == AppId::Home && m_home.needsRender()) {
             m_needsFrame = true;
         }
+        if (m_activeApp == AppId::Files && m_files.needsRender()) {
+            m_needsFrame = true;
+        }
 
         const Key pressed = m_keypad.getKey();
         if (pressed != Key::NONE) {
@@ -132,6 +138,9 @@ public:
         } else if (m_activeApp == AppId::Graphing) {
             drawSystemTitleBar();
             m_graph.renderContent(m_display, 0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
+        } else if (m_activeApp == AppId::Files) {
+            drawSystemTitleBar();
+            m_files.renderContent(0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
         } else if (m_activeApp == AppId::Settings) {
             drawSystemTitleBar();
             m_settingsApp.renderContent(0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
@@ -157,6 +166,7 @@ private:
     BootManager m_boot;
     HomeScreen m_home;
     CalculatorApp m_calculator;
+    FileBrowserApp m_files;
     SimulatorKeypad m_simulatorKeypad;
     GraphApp m_graph;
     SettingsApp m_settingsApp;
@@ -185,6 +195,8 @@ private:
             m_calculator.handleKey(key);
         } else if (m_activeApp == AppId::Graphing) {
             m_graph.handleKey(key);
+        } else if (m_activeApp == AppId::Files) {
+            m_files.handleKey(key);
         } else if (m_activeApp == AppId::Settings) {
             if (m_settingsApp.handleKey(key)) {
                 maybePersistSettings();
@@ -230,6 +242,7 @@ private:
     }
 
     void finishBoot() {
+        (void)m_calculator.loadPersistentHistory();
         m_home.enter();
         m_activeApp = AppId::Home;
         m_needsFrame = true;
@@ -249,14 +262,18 @@ private:
     }
 
     void launch(AppId app) {
-        if (app == AppId::Calculator || app == AppId::Graphing || app == AppId::Settings) {
+        if (app == AppId::Calculator || app == AppId::Graphing ||
+            app == AppId::Files || app == AppId::Settings) {
             m_activeApp = app;
             m_shellDirty = true;
             if (app == AppId::Calculator) {
+                (void)m_calculator.loadPersistentHistory();
                 m_calculator.requestRender();
                 m_calculator.updateBlink(systemTimeMs());
             } else if (app == AppId::Graphing) {
                 m_graph.enter();
+            } else if (app == AppId::Files) {
+                m_files.enter();
             } else if (app == AppId::Settings) {
                 m_settingsApp.enter();
             }

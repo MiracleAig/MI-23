@@ -11,6 +11,9 @@ add_executable(mi23_tests
         test_calculator_app.cpp
         test_display_primitives.cpp
         test_expression.cpp
+        test_axiom_fs.cpp
+        test_file_browser.cpp
+        test_graph_storage.cpp
         test_graph_renderer.cpp
         test_home_screen.cpp
         test_math_typeset.cpp
@@ -19,8 +22,10 @@ add_executable(mi23_tests
         test_system_status.cpp
         ../firmware/app/calculator/calculator_app.cpp
         ../firmware/app/boot/boot_manager.cpp
+        ../firmware/app/files/file_browser_app.cpp
         ../firmware/app/graphing/graph_app.cpp
         ../firmware/app/graphing/graph_renderer.cpp
+        ../firmware/app/graphing/graph_storage.cpp
         ../firmware/app/home/calculator_home.cpp
         ../firmware/app/settings/settings_app.cpp
         ../firmware/app/settings/settings_state.cpp
@@ -41,6 +46,7 @@ target_link_libraries(mi23_tests
         PRIVATE
         GTest::GTest
         GTest::Main
+        axiom_fs
         expression_lib
 )
 

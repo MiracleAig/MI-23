@@ -2,11 +2,15 @@
 
 #include "app/settings/settings_state.h"
 #include "hal/display.h"
+#include "hal/fs/axiom_fs.h"
 #include "hal/keypad.h"
 
 class SettingsApp {
 public:
-    SettingsApp(Display& display, SettingsState& settings, const char* platformName);
+    SettingsApp(Display& display,
+                SettingsState& settings,
+                const char* platformName,
+                AxiomFS::FileSystem* filesystem = nullptr);
 
     void enter();
     bool handleKey(Key key);
@@ -23,14 +27,19 @@ private:
         About,
         Developer,
         ResetConfirm,
+        Storage,
+        FormatConfirm,
     };
 
     Display& m_display;
     SettingsState& m_settings;
     const char* m_platformName;
+    AxiomFS::FileSystem* m_filesystem;
     Screen m_screen;
     int m_selectedIndex;
     int m_developerIndex;
+    int m_storageIndex;
+    char m_storageMessage[96];
     bool m_dirty;
     bool m_saveRequested;
     bool m_needsRender;
@@ -41,9 +50,13 @@ private:
     void renderAbout(int x, int y, int w, int h);
     void renderDeveloper(int x, int y, int w, int h);
     void renderResetConfirm(int x, int y, int w, int h);
+    void renderStorage(int x, int y, int w, int h);
+    void renderFormatConfirm(int x, int y, int w, int h);
     void cycleSelected(int direction);
     void cyclePrecision(int direction);
     void toggleDeveloperSelected();
+    void runStorageAction();
+    void setStorageMessage(const char* message);
     void markChanged();
     void invalidateRect(DisplayRect rect);
     void invalidateContent();

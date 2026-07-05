@@ -1,5 +1,7 @@
 #include "platform/host/startup_host.h"
 
+#include "hal/fs/fs_logger.h"
+
 #include <cstdio>
 #include <filesystem>
 
@@ -20,9 +22,10 @@ HostStartupBackend::HostStartupBackend(Keypad& keypad,
                                        const char* firmwareVersion)
     : m_keypad(keypad)
     , m_settingsStore(settingsStore)
+    , m_fsBackend()
+    , m_fs(m_fsBackend)
     , m_firmwareVersion(firmwareVersion)
     , m_storageRoot(parentDirectory(settingsStore.path()))
-    , m_logsRoot((std::filesystem::path(m_storageRoot) / "logs").string())
     , m_pendingSettingsRepair(false)
 {}
 
@@ -79,23 +82,29 @@ StartupCheckResult HostStartupBackend::loadSettings(SettingsState& settings) {
 }
 
 StartupCheckResult HostStartupBackend::checkStorage() {
-    std::printf("[boot][host] checking storage root %s\n", m_storageRoot.c_str());
-    return ensureDirectory(m_storageRoot,
-                           "Storage folder recreated.",
-                           "Storage folder unavailable; continuing without persistence.");
+    std::printf("[boot][host] running AxiomFS health check\n");
+    const AxiomFS::HealthResult health = AxiomFS::initialize(m_fs);
+    if (health.status != AxiomFS::FilesystemStatus::Healthy) {
+        AxiomFS::appendBootLog(&m_fs, "AxiomFS health check failed or degraded.");
+        return {false, true, false, "AxiomFS degraded; persistence is limited."};
+    }
+    AxiomFS::appendBootLog(&m_fs, AxiomFS::releaseLabel());
+
+    std::printf("[boot][host] checking settings storage root %s\n", m_storageRoot.c_str());
+    StartupCheckResult result = ensureDirectory(m_storageRoot,
+                                                "Storage folder recreated.",
+                                                "Storage folder unavailable; continuing without persistence.");
+    if (!result.ok) {
+        return result;
+    }
+
+    return result.repaired ? result : StartupCheckResult{};
 }
 
 StartupCheckResult HostStartupBackend::verifyResources(SettingsState& settings) {
     (void)settings;
 
     std::printf("[boot][host] verifying filesystem resources\n");
-    StartupCheckResult result = ensureDirectory(m_logsRoot,
-                                                "Log folder recreated.",
-                                                "Filesystem repair failed; continuing without persistence.");
-    if (!result.ok) {
-        return result;
-    }
-
     if (m_pendingSettingsRepair) {
         if (m_settingsStore.save(settings)) {
             m_pendingSettingsRepair = false;
@@ -104,9 +113,7 @@ StartupCheckResult HostStartupBackend::verifyResources(SettingsState& settings) 
         return {false, true, false, "Storage remains unavailable; defaults are temporary."};
     }
 
-    return result.repaired
-        ? result
-        : StartupCheckResult{};
+    return {};
 }
 
 StartupCheckResult HostStartupBackend::startRuntime(SettingsState& settings) {
@@ -138,4 +145,8 @@ StartupCheckResult HostStartupBackend::ensureDirectory(const std::string& path,
     }
 
     return {true, true, true, repairedMessage};
+}
+
+AxiomFS::FileSystem& HostStartupBackend::filesystem() {
+    return m_fs;
 }

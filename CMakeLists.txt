@@ -9,6 +9,8 @@ message(STATUS "Building for platform: ${PLATFORM}")
 if(PLATFORM STREQUAL "rp2350")
     set(PICO_PLATFORM rp2350)
     set(PICO_BOARD waveshare_rp2350_zero)
+    set(PICO_FLASH_SIZE_BYTES "(16 * 1024 * 1024)" CACHE STRING
+            "Waveshare RP2350-PiZero external flash size" FORCE)
 
     if(NOT DEFINED PICO_SDK_PATH)
         set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})

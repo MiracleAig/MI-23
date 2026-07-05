@@ -12,6 +12,7 @@ namespace {
 enum class HomeIcon {
     Calculator,
     Graphing,
+    Files,
     Settings,
 };
 
@@ -24,15 +25,22 @@ struct HomeAppDefinition {
 constexpr HomeAppDefinition HOME_APPS[] = {
     { AppId::Calculator, "Calculator", HomeIcon::Calculator },
     { AppId::Graphing,   "Graphing",   HomeIcon::Graphing   },
+    { AppId::Files,      "Files",      HomeIcon::Files      },
     { AppId::Settings,   "Settings",   HomeIcon::Settings   },
 };
 
 constexpr int APP_COUNT = static_cast<int>(sizeof(HOME_APPS) / sizeof(HOME_APPS[0]));
-constexpr int GRID_COLS = 3;
-constexpr int TILE_W = 82;
-constexpr int TILE_H = 72;
-constexpr int TILE_GAP = 14;
-constexpr int GRID_LEFT = (DISPLAY_WIDTH - (GRID_COLS * TILE_W + (GRID_COLS - 1) * TILE_GAP)) / 2;
+constexpr int HOME_COLUMNS = 4;
+constexpr int HOME_HORIZONTAL_PADDING = 32;
+constexpr int HOME_HEADER_HEIGHT = 18;
+constexpr int HOME_TITLE_TO_GRID_GAP = 24;
+constexpr int HOME_TILE_W = 88;
+constexpr int HOME_TILE_H = 78;
+constexpr int HOME_ROW_GAP = 22;
+constexpr int HOME_ICON_TOP_PADDING = 12;
+constexpr int HOME_LABEL_BOTTOM_PADDING = 10;
+constexpr int HOME_LABEL_HORIZONTAL_PADDING = 8;
+constexpr int HOME_BOTTOM_SAFE_AREA = 44;
 constexpr int DEFAULT_CONTENT_Y = 22;
 constexpr int DEFAULT_CONTENT_HEIGHT = DISPLAY_HEIGHT - DEFAULT_CONTENT_Y;
 
@@ -56,15 +64,63 @@ int appIndex(AppId id) {
     return 0;
 }
 
-DisplayRect tileRectForIndex(int contentY, int index) {
-    const int row = index / GRID_COLS;
-    const int col = index % GRID_COLS;
-    const int gridTop = contentY + 22;
+int textLength(const char* text) {
+    if (!text) {
+        return 0;
+    }
+
+    int length = 0;
+    while (text[length] != '\0') {
+        length++;
+    }
+    return length;
+}
+
+struct HomeLayout {
+    int columns;
+    int gridLeft;
+    int gridTop;
+    int cellW;
+    int rowStep;
+    int tileW;
+    int tileH;
+};
+
+HomeLayout homeLayout(int contentY, int contentHeight) {
+    constexpr int availableWidth = DISPLAY_WIDTH - HOME_HORIZONTAL_PADDING * 2;
+    constexpr int cellW = availableWidth / HOME_COLUMNS;
+    const int rowCount = (appCount() + HOME_COLUMNS - 1) / HOME_COLUMNS;
+    const int gridHeight = rowCount * HOME_TILE_H + std::max(0, rowCount - 1) * HOME_ROW_GAP;
+    const int gridAreaTop = contentY + HOME_HEADER_HEIGHT + HOME_TITLE_TO_GRID_GAP;
+    const int gridAreaBottom = contentY + contentHeight - HOME_BOTTOM_SAFE_AREA;
+    const int gridAreaHeight = std::max(HOME_TILE_H, gridAreaBottom - gridAreaTop);
+    const int gridTop = gridAreaTop + std::max(0, gridAreaHeight - gridHeight) / 2;
+
     return {
-        GRID_LEFT + col * (TILE_W + TILE_GAP),
-        gridTop + row * (TILE_H + TILE_GAP),
-        TILE_W,
-        TILE_H
+        HOME_COLUMNS,
+        HOME_HORIZONTAL_PADDING,
+        gridTop,
+        cellW,
+        HOME_TILE_H + HOME_ROW_GAP,
+        HOME_TILE_W,
+        HOME_TILE_H
+    };
+}
+
+DisplayRect tileRectForIndex(int contentY, int contentHeight, int index) {
+    const HomeLayout layout = homeLayout(contentY, contentHeight);
+    const int row = index / layout.columns;
+    const int col = index % layout.columns;
+    const int remainingApps = appCount() - row * layout.columns;
+    const int appsInRow = std::min(layout.columns, remainingApps);
+    const int rowLeft = layout.gridLeft + (layout.columns - appsInRow) * layout.cellW / 2;
+    const int tileInsetX = (layout.cellW - layout.tileW) / 2;
+
+    return {
+        rowLeft + col * layout.cellW + tileInsetX,
+        layout.gridTop + row * layout.rowStep,
+        layout.tileW,
+        layout.tileH
     };
 }
 
@@ -89,6 +145,48 @@ void drawCenteredText(Display& display,
                       uint16_t color) {
     const int textX = x + (w - Display::textWidth(text)) / 2;
     display.drawText(text, textX, y, color);
+}
+
+void drawCenteredTextFit(Display& display,
+                         const char* text,
+                         int x,
+                         int y,
+                         int w,
+                         uint16_t color) {
+    if (!text || w <= 0) {
+        return;
+    }
+
+    const int maxChars = w / FONT_CHAR_ADVANCE;
+    if (maxChars <= 0) {
+        return;
+    }
+
+    char clipped[24] = {};
+    const int length = textLength(text);
+    if (length <= maxChars) {
+        drawCenteredText(display, text, x, y, w, color);
+        return;
+    }
+
+    if (maxChars <= 3) {
+        for (int i = 0; i < maxChars; ++i) {
+            clipped[i] = '.';
+        }
+        clipped[maxChars] = '\0';
+    } else {
+        const int copyLength = std::min(maxChars - 3,
+                                        static_cast<int>(sizeof(clipped)) - 4);
+        for (int i = 0; i < copyLength; ++i) {
+            clipped[i] = text[i];
+        }
+        clipped[copyLength] = '.';
+        clipped[copyLength + 1] = '.';
+        clipped[copyLength + 2] = '.';
+        clipped[copyLength + 3] = '\0';
+    }
+
+    drawCenteredText(display, clipped, x, y, w, color);
 }
 
 void drawCalculatorIcon(Display& display, int x, int y, uint16_t color) {
@@ -128,6 +226,14 @@ void drawSettingsIcon(Display& display, int x, int y, uint16_t color) {
     display.fillRect(x + 17, y + 19, 4, 6, color);
 }
 
+void drawFilesIcon(Display& display, int x, int y, uint16_t color) {
+    drawOutline(display, x, y + 6, 38, 26, color, 2);
+    display.fillRect(x + 4, y + 2, 14, 6, color);
+    display.fillRect(x + 4, y + 12, 28, 2, color);
+    display.fillRect(x + 4, y + 19, 24, 2, color);
+    display.fillRect(x + 4, y + 26, 18, 2, color);
+}
+
 void drawIcon(Display& display,
               const HomeAppDefinition& app,
               int centerX,
@@ -137,6 +243,8 @@ void drawIcon(Display& display,
         drawCalculatorIcon(display, centerX - 17, topY, color);
     } else if (app.icon == HomeIcon::Graphing) {
         drawGraphingIcon(display, centerX - 19, topY, color);
+    } else if (app.icon == HomeIcon::Files) {
+        drawFilesIcon(display, centerX - 19, topY, color);
     } else {
         drawSettingsIcon(display, centerX - 19, topY, color);
     }
@@ -238,8 +346,8 @@ void HomeScreen::invalidateSelectionChange(int oldIndex, int newIndex) {
     }
 
     const DisplayRect dirty = DirtyRegionList::merge(
-        tileRectForIndex(m_contentY, oldIndex),
-        tileRectForIndex(m_contentY, newIndex));
+        tileRectForIndex(m_contentY, m_contentHeight, oldIndex),
+        tileRectForIndex(m_contentY, m_contentHeight, newIndex));
     invalidateRect(DirtyRegionList::intersect(
         dirty,
         {0, m_contentY, DISPLAY_WIDTH, m_contentHeight}));
@@ -250,29 +358,33 @@ void HomeScreen::renderContentArea(int contentY, int contentHeight) {
     m_display.drawText("Select an app", 8, contentY + 6, COLOR_MUTED);
 
     for (int i = 0; i < appCount(); i++) {
-        const DisplayRect tile = tileRectForIndex(contentY, i);
+        const DisplayRect tile = tileRectForIndex(contentY, contentHeight, i);
         const int x = tile.x;
         const int y = tile.y;
         const bool selected = i == m_selectedIndex;
 
-        m_display.fillRect(x, y, TILE_W, TILE_H,
+        m_display.fillRect(x, y, tile.w, tile.h,
                            selected ? COLOR_TILE_SELECTED : COLOR_TILE);
         drawOutline(m_display,
                     x,
                     y,
-                    TILE_W,
-                    TILE_H,
+                    tile.w,
+                    tile.h,
                     selected ? COLOR_FOCUS : COLOR_TILE_BORDER,
                     selected ? 3 : 1);
 
         const uint16_t iconColor = selected ? Display::WHITE.rgb565() : COLOR_MUTED;
-        drawIcon(m_display, HOME_APPS[i], x + TILE_W / 2, y + 11, iconColor);
-        drawCenteredText(m_display,
-                         HOME_APPS[i].label,
-                         x,
-                         y + TILE_H - FONT_CHAR_HEIGHT - 9,
-                         TILE_W,
-                         selected ? Display::WHITE.rgb565() : COLOR_MUTED);
+        drawIcon(m_display,
+                 HOME_APPS[i],
+                 x + tile.w / 2,
+                 y + HOME_ICON_TOP_PADDING,
+                 iconColor);
+        drawCenteredTextFit(m_display,
+                            HOME_APPS[i].label,
+                            x + HOME_LABEL_HORIZONTAL_PADDING,
+                            y + tile.h - FONT_CHAR_HEIGHT - HOME_LABEL_BOTTOM_PADDING,
+                            tile.w - HOME_LABEL_HORIZONTAL_PADDING * 2,
+                            selected ? Display::WHITE.rgb565() : COLOR_MUTED);
     }
 
     m_display.drawText("Arrows move   Enter open", 8, contentY + contentHeight - 20,
@@ -288,15 +400,15 @@ void HomeScreen::moveSelection(int deltaCol, int deltaRow) {
         return;
     }
 
-    const int rowCount = (count + GRID_COLS - 1) / GRID_COLS;
-    const int currentRow = m_selectedIndex / GRID_COLS;
-    const int currentCol = m_selectedIndex % GRID_COLS;
+    const int rowCount = (count + HOME_COLUMNS - 1) / HOME_COLUMNS;
+    const int currentRow = m_selectedIndex / HOME_COLUMNS;
+    const int currentCol = m_selectedIndex % HOME_COLUMNS;
     const int nextRow = std::clamp(currentRow + deltaRow, 0, rowCount - 1);
-    const int lastColInRow = std::min(GRID_COLS - 1,
-                                      count - nextRow * GRID_COLS - 1);
+    const int lastColInRow = std::min(HOME_COLUMNS - 1,
+                                      count - nextRow * HOME_COLUMNS - 1);
     const int nextCol = std::clamp(currentCol + deltaCol, 0, lastColInRow);
 
-    m_selectedIndex = nextRow * GRID_COLS + nextCol;
+    m_selectedIndex = nextRow * HOME_COLUMNS + nextCol;
 }
 
 bool HomeScreen::needsRender() const {

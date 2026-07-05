@@ -12,6 +12,7 @@ enum class AppId {
     Home,
     Calculator,
     Graphing,
+    Files,
     Settings,
     Matrix,
 };

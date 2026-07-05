@@ -6,6 +6,7 @@
 
 #include "app/boot/boot_manager.h"
 #include "app/calculator/calculator_app.h"
+#include "app/files/file_browser_app.h"
 #include "app/graphing/graph_app.h"
 #include "app/home/calculator_home.h"
 #include "app/settings/settings_app.h"
@@ -14,6 +15,8 @@
 #include "display_rp2350.h"
 #include "hal/system_time.h"
 #include "keypad_rp2350_2.h"
+#include "platform/rp2350/axiom_fs_flash_block_device.h"
+#include "platform/rp2350/axiom_fs_flash_config.h"
 #include "platform/rp2350/keypad_rp2350.h"
 #include "platform/rp2350/settings_store_rp2350.h"
 #include "platform/rp2350/startup_rp2350.h"
@@ -27,11 +30,40 @@ static constexpr int SCREEN_H = DISPLAY_HEIGHT;
 static constexpr int CONTENT_Y = SystemTitleBar::kHeight;
 static constexpr int CONTENT_H = SCREEN_H - CONTENT_Y;
 
-CalculatorAppConfig rpCalculatorConfig(const SettingsState& settings) {
+#ifndef MI23_BUILD_TARGET
+#define MI23_BUILD_TARGET "rp2350"
+#endif
+
+#ifndef MI23_FIRMWARE_VERSION
+#define MI23_FIRMWARE_VERSION "dev"
+#endif
+
+void waitForUsbSerialInDebugBuild() {
+#ifndef NDEBUG
+    sleep_ms(1800);
+#endif
+}
+
+void logEarlyBootDiagnostics(AxiomFS::FileSystem& filesystem) {
+    std::printf("[boot][rp2350] MI-23 firmware=%s build_target=%s\n",
+                MI23_FIRMWARE_VERSION,
+                MI23_BUILD_TARGET);
+    std::printf("[boot][rp2350] detected platform=RP2350\n");
+    std::printf("[boot][rp2350] AxiomFS backend selected=%s\n", filesystem.backendName());
+    std::printf("[boot][rp2350] flash configured=%lu detected=%lu\n",
+                static_cast<unsigned long>(PICO_FLASH_SIZE_BYTES),
+                static_cast<unsigned long>(RP2350FlashBlockDevice::detectedFlashSize()));
+    std::printf("[boot][rp2350] filesystem offset=%lu size=%lu\n",
+                static_cast<unsigned long>(RP2350FlashLayout::kLittleFsOffset),
+                static_cast<unsigned long>(RP2350FlashLayout::kLittleFsSize));
+}
+
+CalculatorAppConfig rpCalculatorConfig(const SettingsState& settings, AxiomFS::FileSystem* filesystem) {
     CalculatorAppConfig config;
     config.showOnScreenKeypad = false;
     config.uiScale = 2;
     config.settings = &settings;
+    config.filesystem = filesystem;
     return config;
 }
 
@@ -65,19 +97,22 @@ public:
                         Keypad& keypad,
                         HomeScreen& home,
                         CalculatorApp& calculator,
+                        FileBrowserApp& files,
                         SettingsApp& settingsApp,
                         SettingsStore& settingsStore,
+                        AxiomFS::FileSystem& filesystem,
                         BootManager& boot,
                         SettingsState& settings)
         : m_display(display)
         , m_keypad(keypad)
         , m_home(home)
         , m_calculator(calculator)
+        , m_files(files)
         , m_settingsApp(settingsApp)
         , m_settingsStore(settingsStore)
         , m_boot(boot)
         , m_settings(settings)
-        , m_graph(&m_settings)
+        , m_graph(&m_settings, &filesystem)
         , m_activeApp(AppId::Boot)
         , m_waitingForRelease(false)
         , m_shellDirty(true)
@@ -154,6 +189,16 @@ public:
             return;
         }
 
+        if (m_activeApp == AppId::Files) {
+            m_files.handleKey(pressed);
+            if (m_files.needsRender()) {
+                drawCurrentShell();
+                m_files.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
+                m_display.present();
+            }
+            return;
+        }
+
         if (m_activeApp == AppId::Settings) {
             if (m_settingsApp.handleKey(pressed)) {
                 goHome();
@@ -172,6 +217,7 @@ private:
     Keypad& m_keypad;
     HomeScreen& m_home;
     CalculatorApp& m_calculator;
+    FileBrowserApp& m_files;
     SettingsApp& m_settingsApp;
     SettingsStore& m_settingsStore;
     BootManager& m_boot;
@@ -206,6 +252,7 @@ private:
     }
 
     void finishBoot() {
+        (void)m_calculator.loadPersistentHistory();
         m_home.enter();
         m_activeApp = AppId::Home;
         m_shellDirty = true;
@@ -240,6 +287,7 @@ private:
         if (app == AppId::Calculator) {
             m_activeApp = AppId::Calculator;
             m_shellDirty = true;
+            (void)m_calculator.loadPersistentHistory();
             m_calculator.requestRender();
             m_calculator.updateBlink(systemTimeMs());
             drawCurrentShell();
@@ -253,6 +301,16 @@ private:
             m_shellDirty = true;
             drawCurrentShell();
             m_graph.renderContent(m_display, 0, CONTENT_Y, SCREEN_W, CONTENT_H);
+            m_display.present();
+            return;
+        }
+
+        if (app == AppId::Files) {
+            m_activeApp = AppId::Files;
+            m_files.enter();
+            m_shellDirty = true;
+            drawCurrentShell();
+            m_files.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
             m_display.present();
             return;
         }
@@ -282,6 +340,7 @@ private:
 
 int main() {
     stdio_init_all();
+    waitForUsbSerialInDebugBuild();
 
     DisplayRP2350 display;
     KeypadRP2350 keypad1;
@@ -291,17 +350,22 @@ int main() {
     SettingsState settings;
     RP2350SettingsStore settingsStore;
     RP2350StartupBackend startup(keypad, settingsStore);
+    logEarlyBootDiagnostics(startup.filesystem());
+
     HomeScreen home(display);
-    CalculatorApp calculator(display, keypad, rpCalculatorConfig(settings));
-    SettingsApp settingsApp(display, settings, "Hardware");
+    CalculatorApp calculator(display, keypad, rpCalculatorConfig(settings, &startup.filesystem()));
+    FileBrowserApp files(display, &startup.filesystem());
+    SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
     BootManager boot(display, settings, startup);
 
     RP2350AppController app(display,
                             keypad,
                             home,
                             calculator,
+                            files,
                             settingsApp,
                             settingsStore,
+                            startup.filesystem(),
                             boot,
                             settings);
     app.init();

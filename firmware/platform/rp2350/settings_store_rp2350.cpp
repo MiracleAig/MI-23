@@ -3,18 +3,17 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
+#include "platform/rp2350/axiom_fs_flash_config.h"
 
 #include <array>
 #include <cstring>
 
 namespace {
 
-constexpr uint32_t kSettingsSectorSize = FLASH_SECTOR_SIZE;
 constexpr uint32_t kSettingsPageSize = FLASH_PAGE_SIZE;
-constexpr uint32_t kSettingsOffset = PICO_FLASH_SIZE_BYTES - kSettingsSectorSize;
 
 const uint8_t* flashAddress() {
-    return reinterpret_cast<const uint8_t*>(XIP_BASE + kSettingsOffset);
+    return reinterpret_cast<const uint8_t*>(XIP_BASE + RP2350FlashLayout::kSettingsSectorOffset);
 }
 
 } // namespace
@@ -33,7 +32,7 @@ bool RP2350SettingsStore::load(SettingsState& settings) {
 }
 
 bool RP2350SettingsStore::save(const SettingsState& settings) {
-    std::array<uint8_t, kSettingsSectorSize> sectorBuffer{};
+    std::array<uint8_t, RP2350FlashLayout::kSettingsSectorSize> sectorBuffer{};
     sectorBuffer.fill(0xFFu);
 
     if (SettingsStore::serialize(settings,
@@ -47,8 +46,11 @@ bool RP2350SettingsStore::save(const SettingsState& settings) {
     }
 
     const uint32_t irqState = save_and_disable_interrupts();
-    flash_range_erase(kSettingsOffset, kSettingsSectorSize);
-    flash_range_program(kSettingsOffset, sectorBuffer.data(), kSettingsPageSize);
+    flash_range_erase(RP2350FlashLayout::kSettingsSectorOffset,
+                      RP2350FlashLayout::kSettingsSectorSize);
+    flash_range_program(RP2350FlashLayout::kSettingsSectorOffset,
+                        sectorBuffer.data(),
+                        kSettingsPageSize);
     restore_interrupts(irqState);
     return true;
 }

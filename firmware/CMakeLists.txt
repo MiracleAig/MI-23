@@ -5,7 +5,23 @@ target_include_directories(firmware_headers INTERFACE
 
 add_subdirectory(math)
 
+add_library(axiom_fs STATIC
+        hal/fs/axiom_fs.cpp
+        hal/fs/axiom_fs.h
+        hal/fs/fs_logger.cpp
+        hal/fs/fs_logger.h
+)
+
+target_link_libraries(axiom_fs PUBLIC
+        firmware_headers
+)
+
 if(PLATFORM STREQUAL "host")
+    target_sources(axiom_fs PRIVATE
+            platform/host/axiom_fs_host.cpp
+            platform/host/axiom_fs_host.h
+    )
+
     add_subdirectory(
             ${PROJECT_SOURCE_DIR}/cmake/host
             ${CMAKE_CURRENT_BINARY_DIR}/platform/host
@@ -17,10 +33,14 @@ if(PLATFORM STREQUAL "host")
             app/calculator/calculator_app.cpp
             app/calculator/calculator_app.h
             app/calculator/history.h
+            app/files/file_browser_app.cpp
+            app/files/file_browser_app.h
             app/graphing/graph_app.cpp
             app/graphing/graph_app.h
             app/graphing/graph_renderer.cpp
             app/graphing/graph_renderer.h
+            app/graphing/graph_storage.cpp
+            app/graphing/graph_storage.h
             app/settings/settings_app.cpp
             app/settings/settings_app.h
             app/settings/settings_state.cpp
@@ -45,11 +65,24 @@ if(PLATFORM STREQUAL "host")
     target_link_libraries(calculator_app
             PUBLIC
             firmware_headers
+            axiom_fs
             host_platform
             PRIVATE
             expression_lib
     )
 elseif(PLATFORM STREQUAL "rp2350")
+    target_sources(axiom_fs PRIVATE
+            platform/rp2350/axiom_fs_flash_block_device.cpp
+            platform/rp2350/axiom_fs_flash_block_device.h
+            platform/rp2350/axiom_fs_flash_config.h
+            platform/rp2350/axiom_fs_rp2350.cpp
+            platform/rp2350/axiom_fs_rp2350.h
+    )
+    target_link_libraries(axiom_fs PUBLIC
+            pico_stdlib
+            hardware_flash
+    )
+
     add_subdirectory(
             ${PROJECT_SOURCE_DIR}/cmake/rp2350
             ${CMAKE_CURRENT_BINARY_DIR}/platform/rp2350

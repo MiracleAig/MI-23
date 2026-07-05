@@ -51,12 +51,13 @@ TEST(HomeScreen, SelectionOutlineMovesWhenArrowKeyChangesSelection) {
     HomeDisplayStub display;
     HomeScreen home(display);
 
-    constexpr int tileWidth = 82;
-    constexpr int tileGap = 14;
-    constexpr int gridLeft = (DISPLAY_WIDTH - (3 * tileWidth + 2 * tileGap)) / 2;
-    constexpr int tileY = 44; // contentY(22) + local grid offset(22)
-    constexpr int firstTileX = gridLeft;
-    constexpr int secondTileX = gridLeft + tileWidth + tileGap;
+    constexpr int columns = 4;
+    constexpr int horizontalPadding = 32;
+    constexpr int tileWidth = 88;
+    constexpr int cellWidth = (DISPLAY_WIDTH - horizontalPadding * 2) / columns;
+    constexpr int tileY = 131;
+    constexpr int firstTileX = horizontalPadding + (cellWidth - tileWidth) / 2;
+    constexpr int secondTileX = firstTileX + cellWidth;
 
     const uint16_t selectedOutline = Display::rgb(255, 230, 95).rgb565();
     const uint16_t unselectedOutline = Display::rgb(94, 102, 116).rgb565();

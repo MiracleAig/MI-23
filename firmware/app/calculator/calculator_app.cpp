@@ -7,8 +7,10 @@
 #include "math/math_typeset.h"
 #include "graphics/font.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 // ── Button table ─────────────────────────────────────────────────────────────
 static constexpr char PI_LABEL[] = { (char)128, '\0' };
@@ -31,6 +33,7 @@ static const uint16_t COLOR_BTN_FN      = Display::rgb( 80,  50, 100); // SIN/CO
 static const uint16_t COLOR_BTN_TEXT    = Display::WHITE;
 static constexpr int ENTRY_VERTICAL_PADDING = 2;
 static constexpr int SCALED_RESULT_GAP = 4;
+static constexpr const char* HISTORY_PATH = "cache/history.json";
 
 static int normalizedScale(int scale) {
     return std::max(1, scale);
@@ -73,6 +76,94 @@ static const char* functionInsertText(Key key) {
         case Key::LN:   return "ln(";
         default: return nullptr;
     }
+}
+
+static std::string jsonEscape(const std::string& text) {
+    std::string escaped;
+    escaped.reserve(text.size());
+    for (char ch : text) {
+        if (ch == '"' || ch == '\\') {
+            escaped.push_back('\\');
+            escaped.push_back(ch);
+        } else if (static_cast<unsigned char>(ch) < 0x20u) {
+            escaped.push_back(' ');
+        } else {
+            escaped.push_back(ch);
+        }
+    }
+    return escaped;
+}
+
+static void skipWhitespace(const std::string& text, std::size_t& pos) {
+    while (pos < text.size() && std::isspace(static_cast<unsigned char>(text[pos]))) {
+        pos++;
+    }
+}
+
+static bool parseJsonStringValue(const std::string& text,
+                                 const char* key,
+                                 std::size_t objectStart,
+                                 std::size_t objectEnd,
+                                 std::string& out) {
+    const std::string marker = std::string("\"") + key + "\"";
+    std::size_t pos = text.find(marker, objectStart);
+    if (pos == std::string::npos || pos >= objectEnd) {
+        return false;
+    }
+    pos = text.find(':', pos + marker.size());
+    if (pos == std::string::npos || pos >= objectEnd) {
+        return false;
+    }
+    pos++;
+    skipWhitespace(text, pos);
+    if (pos >= objectEnd || text[pos] != '"') {
+        return false;
+    }
+    pos++;
+
+    out.clear();
+    while (pos < objectEnd) {
+        const char ch = text[pos++];
+        if (ch == '"') {
+            return true;
+        }
+        if (ch == '\\') {
+            if (pos >= objectEnd) {
+                return false;
+            }
+            out.push_back(text[pos++]);
+        } else {
+            out.push_back(ch);
+        }
+    }
+    return false;
+}
+
+static bool parseJsonBoolValue(const std::string& text,
+                               const char* key,
+                               std::size_t objectStart,
+                               std::size_t objectEnd,
+                               bool& out) {
+    const std::string marker = std::string("\"") + key + "\"";
+    std::size_t pos = text.find(marker, objectStart);
+    if (pos == std::string::npos || pos >= objectEnd) {
+        return false;
+    }
+    pos = text.find(':', pos + marker.size());
+    if (pos == std::string::npos || pos >= objectEnd) {
+        return false;
+    }
+    pos++;
+    skipWhitespace(text, pos);
+    if (text.compare(pos, 4, "true") == 0) {
+        out = true;
+        return true;
+    }
+    if (text.compare(pos, 5, "false") == 0) {
+        out = false;
+        return true;
+    }
+    return false;
 }
 
 static bool insertTextAtCursor(char* buffer, int capacity, int& length,
@@ -310,6 +401,7 @@ CalculatorApp::CalculatorApp(Display& display, Keypad& keypad,
     , m_historyCount(0)
     , m_historyStart(0)
     , m_historyScroll(0)
+    , m_historyLoaded(false)
     , m_injectedKey(Key::NONE)
     , m_config(config)
     , m_needsRender(true)
@@ -534,6 +626,13 @@ void CalculatorApp::pushHistory() {
     m_resultBuffer[0] = '\0';
     m_resultIsError   = false;
     m_inputViewportX  = 0;
+    (void)savePersistentHistory();
+}
+
+void CalculatorApp::clearHistory() {
+    m_historyCount = 0;
+    m_historyStart = 0;
+    m_historyScroll = 0;
 }
 
 void CalculatorApp::clampScroll() {
@@ -916,6 +1015,84 @@ int CalculatorApp::historySize() const {
 const HistoryEntry& CalculatorApp::historyAt(int index) const {
     const int slot = (m_historyStart + index) % MAX_HISTORY;
     return m_history[slot];
+}
+
+bool CalculatorApp::loadPersistentHistory() {
+    if (m_historyLoaded) {
+        return true;
+    }
+    m_historyLoaded = true;
+
+    if (!m_config.filesystem) {
+        return false;
+    }
+
+    const AxiomFS::ReadResult read = m_config.filesystem->readFile(HISTORY_PATH);
+    if (read.status == AxiomFS::Status::NotFound) {
+        return true;
+    }
+    if (!read.ok()) {
+        return false;
+    }
+
+    const std::string json(read.data.begin(), read.data.end());
+    clearHistory();
+
+    std::size_t pos = 0;
+    while (m_historyCount < MAX_HISTORY) {
+        const std::size_t objectStart = json.find('{', pos);
+        if (objectStart == std::string::npos) {
+            break;
+        }
+        const std::size_t objectEnd = json.find('}', objectStart + 1);
+        if (objectEnd == std::string::npos) {
+            clearHistory();
+            return false;
+        }
+
+        std::string input;
+        std::string result;
+        bool isError = false;
+        if (parseJsonStringValue(json, "input", objectStart, objectEnd, input) &&
+            parseJsonStringValue(json, "result", objectStart, objectEnd, result) &&
+            parseJsonBoolValue(json, "error", objectStart, objectEnd, isError)) {
+            const int insertIndex = (m_historyStart + m_historyCount) % MAX_HISTORY;
+            m_history[insertIndex] = {input, result, isError};
+            m_historyCount++;
+        }
+
+        pos = objectEnd + 1;
+    }
+
+    clampScroll();
+    invalidateRect(historyRect());
+    m_needsRender = true;
+    return true;
+}
+
+bool CalculatorApp::savePersistentHistory() {
+    if (!m_config.filesystem) {
+        return false;
+    }
+
+    std::string json = "{\n  \"entries\": [\n";
+    for (int i = 0; i < historySize(); ++i) {
+        const HistoryEntry& entry = historyAt(i);
+        json += "    {\"input\":\"";
+        json += jsonEscape(entry.input);
+        json += "\",\"result\":\"";
+        json += jsonEscape(entry.result);
+        json += "\",\"error\":";
+        json += entry.isError ? "true" : "false";
+        json += "}";
+        if (i + 1 < historySize()) {
+            json += ",";
+        }
+        json += "\n";
+    }
+    json += "  ]\n}\n";
+
+    return m_config.filesystem->writeFile(HISTORY_PATH, json) == AxiomFS::Status::Ok;
 }
 
 int CalculatorApp::currentUiScale() const {

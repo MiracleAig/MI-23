@@ -72,3 +72,4 @@ mi23
 # OS files
 .DS_Store
 Thumbs.db
+/mi23_fs/

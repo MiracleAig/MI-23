@@ -7,6 +7,7 @@
 #include "history.h"
 #include "app/settings/settings_state.h"
 #include "hal/display.h"
+#include "hal/fs/axiom_fs.h"
 #include "hal/keypad.h"
 #include "math/math_typeset.h"
 #include <array>
@@ -39,6 +40,7 @@ struct CalculatorAppConfig {
     bool showOnScreenKeypad = false;
     int uiScale = 1;
     const SettingsState* settings = nullptr;
+    AxiomFS::FileSystem* filesystem = nullptr;
 };
 
 class CalculatorApp {
@@ -58,6 +60,8 @@ public:
     bool updateBlink(uint64_t nowMs);
     void requestRender();
     void requestInputRender();
+    bool loadPersistentHistory();
+    bool savePersistentHistory();
     const char* input() const { return m_inputBuffer; }
     int cursorPos() const { return m_cursorPos; }
     int historySize() const;
@@ -87,6 +91,7 @@ private:
     int m_historyCount;
     int m_historyStart;
     int m_historyScroll;
+    bool m_historyLoaded;
 
     // Injected key from a mouse click — checked each update() tick
     Key m_injectedKey;
@@ -98,6 +103,7 @@ private:
 
     void processKey(Key pressed);
     void pushHistory();
+    void clearHistory();
     void clampScroll();
 
     void drawHistory();

@@ -137,6 +137,19 @@ Major software areas:
 * [RP2350 Documentation](https://www.raspberrypi.com/documentation/microcontrollers/)
 * [Pico Examples](https://github.com/raspberrypi/pico-examples)
 
+### RP2350 USB Boot Logs
+
+RP2350 debug/development builds expose boot diagnostics over USB CDC serial.
+On Linux, after flashing the board and connecting USB, view logs on
+`/dev/ttyACM0` at 115200 baud:
+
+```bash
+picocom -b 115200 /dev/ttyACM0
+```
+
+If `picocom` is unavailable, `screen /dev/ttyACM0 115200` or another serial
+terminal configured for 115200 baud also works.
+
 ### Recommended Development Environments
 
 * [CLion](https://www.jetbrains.com/clion/) **recommended**
