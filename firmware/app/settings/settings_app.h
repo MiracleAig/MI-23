@@ -16,6 +16,7 @@ public:
     bool handleKey(Key key);
     bool hasPendingChanges() const;
     bool consumeSaveRequest();
+    bool consumeCompanionLinkRequest();
     void markSaved();
     void renderContent(int x, int y, int w, int h);
     void requestRender();
@@ -49,6 +50,7 @@ private:
     bool m_hasProbeResult;
     bool m_dirty;
     bool m_saveRequested;
+    bool m_companionLinkRequested;
     bool m_needsRender;
     DirtyRegionList m_dirtyRegions;
     DisplayRect m_contentBounds;

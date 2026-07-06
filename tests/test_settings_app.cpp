@@ -110,6 +110,29 @@ TEST(SettingsApp, DeveloperOptionsToggleInSubmenu) {
 #endif
 }
 
+TEST(SettingsApp, DeveloperOptionsRequestsCompanionLink) {
+#if MI23_ENABLE_DEVELOPER_OPTIONS
+    SettingsNullDisplay display;
+    SettingsState settings;
+    SettingsApp app(display, settings, "Simulator");
+
+    app.enter();
+    for (int i = 0; i < 8; ++i) {
+        app.handleKey(Key::CURSOR_DOWN);
+    }
+    app.handleKey(Key::ENTER); // Developer Options
+    for (int i = 0; i < 5; ++i) {
+        app.handleKey(Key::CURSOR_DOWN);
+    }
+    app.handleKey(Key::ENTER); // Companion Link
+
+    EXPECT_TRUE(app.consumeCompanionLinkRequest());
+    EXPECT_FALSE(app.consumeCompanionLinkRequest());
+#else
+    GTEST_SKIP() << "Developer Options menu is compile-gated off.";
+#endif
+}
+
 TEST(SettingsApp, FormatStorageInitializesFilesystemLayout) {
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / "mi23_settings_storage_tests";

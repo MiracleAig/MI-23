@@ -75,3 +75,5 @@ Thumbs.db
 /mi23_fs/
 /build-rp2350-dev/
 /build-host-dev/
+/build-rp2350-release/
+/build-host-release/

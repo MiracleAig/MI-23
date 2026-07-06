@@ -67,6 +67,7 @@ const char* appTitleForId(AppId app) {
         case AppId::Graphing: return "Graphing";
         case AppId::Files: return "Files";
         case AppId::Settings: return "Settings";
+        case AppId::Companion: return "Companion";
         case AppId::Matrix: return "Matrix";
         case AppId::Boot:
         default: return "";

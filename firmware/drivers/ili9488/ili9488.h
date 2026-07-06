@@ -91,6 +91,7 @@ public:
                    int16_t h,
                    const uint16_t* pixels,
                    int sourceStridePixels);
+    void setTimingLogsEnabled(bool enabled);
 
     static uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
         return static_cast<uint16_t>(((r & 0xF8) << 8) |
@@ -128,6 +129,7 @@ private:
     uint m_pin_sck;
     uint m_pin_mosi;
     uint m_pin_bl;
+    bool m_timingLogsEnabled = true;
 
     std::array<uint8_t, ili9488_config::LANDSCAPE_WIDTH * ROWS_PER_WRITE_CHUNK * 3> m_rowBuffer{};
 

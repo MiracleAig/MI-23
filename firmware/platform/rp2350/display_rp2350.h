@@ -20,6 +20,7 @@ public:
     void drawText(const char* text, int x, int y, Color color) override;
     void drawText(const char* text, int x, int y, Color color, int scale);
     void present() override;
+    void setTimingLogsEnabled(bool enabled);
 
 private:
     void drawChar(char c, int x, int y, Color color, int scale);
@@ -28,4 +29,5 @@ private:
     ILI9488 m_display;
     std::array<uint16_t, DISPLAY_WIDTH * DISPLAY_HEIGHT> m_framebuffer{};
     DirtyRegionList m_presentRegions;
+    bool m_timingLogsEnabled = true;
 };

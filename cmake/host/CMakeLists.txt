@@ -10,6 +10,8 @@ add_library(host_platform STATIC
         ${HOST_PLATFORM_SOURCE_DIR}/simulator_keypad.cpp
         ${HOST_PLATFORM_SOURCE_DIR}/simulator_keypad.h
         ${HOST_PLATFORM_SOURCE_DIR}/simulator_layout.h
+        ${HOST_PLATFORM_SOURCE_DIR}/usb_cdc_transport_host.cpp
+        ${HOST_PLATFORM_SOURCE_DIR}/usb_cdc_transport_host.h
 )
 
 target_link_libraries(host_platform PUBLIC

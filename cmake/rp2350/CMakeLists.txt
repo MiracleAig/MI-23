@@ -14,6 +14,8 @@ endif()
 add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.cpp
         ${PROJECT_SOURCE_DIR}/firmware/app/boot/boot_manager.h
+        ${PROJECT_SOURCE_DIR}/firmware/app/companion/companion_link_app.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/app/companion/companion_link_app.h
         ${RP2350_PLATFORM_SOURCE_DIR}/main_rp2350.cpp
         ${ILI9488_SOURCE_DIR}/ili9488.cpp
         ${ILI9488_SOURCE_DIR}/ili9488.h
@@ -36,6 +38,12 @@ add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.cpp
+        ${RP2350_PLATFORM_SOURCE_DIR}/usb_cdc_transport_rp2350.cpp
+        ${RP2350_PLATFORM_SOURCE_DIR}/usb_cdc_transport_rp2350.h
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionProtocol.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionProtocol.h
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionSession.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionSession.h
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
         ${PROJECT_SOURCE_DIR}/firmware/app/files/file_browser_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_app.h
@@ -46,6 +54,7 @@ add_executable(mi23
         ${PROJECT_SOURCE_DIR}/firmware/app/ui/system_status.h
         ${PROJECT_SOURCE_DIR}/firmware/app/ui/title_bar.h
         ${PROJECT_SOURCE_DIR}/firmware/hal/settings_store.h
+        ${PROJECT_SOURCE_DIR}/firmware/hal/usb_cdc_transport.h
         ${RP2350_PLATFORM_SOURCE_DIR}/settings_store_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/startup_rp2350.h
 )

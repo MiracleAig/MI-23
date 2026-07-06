@@ -14,6 +14,7 @@ enum class AppId {
     Graphing,
     Files,
     Settings,
+    Companion,
     Matrix,
 };
 

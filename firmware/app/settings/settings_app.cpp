@@ -8,6 +8,10 @@
 #define MI23_ENABLE_DEVELOPER_OPTIONS 0
 #endif
 
+#ifndef MI23_COMPANION_DEBUG_LOGS
+#define MI23_COMPANION_DEBUG_LOGS 0
+#endif
+
 namespace {
 
 const Color COLOR_BG = Display::rgb(8, 10, 14);
@@ -34,7 +38,7 @@ enum class MainItem {
 
 constexpr int MAIN_ITEM_COUNT = MI23_ENABLE_DEVELOPER_OPTIONS ? 11 : 10;
 constexpr int DEV_TOGGLE_COUNT = 5;
-constexpr int DEV_FS_ACTION_COUNT = MI23_ENABLE_DEVELOPER_OPTIONS ? 5 : 0;
+constexpr int DEV_FS_ACTION_COUNT = MI23_ENABLE_DEVELOPER_OPTIONS ? 6 : 0;
 constexpr int DEV_ITEM_COUNT = DEV_TOGGLE_COUNT + DEV_FS_ACTION_COUNT;
 constexpr int STORAGE_ACTION_COUNT = 3;
 constexpr int PRECISION_VALUES[] = {3, 6, 9, 12};
@@ -114,11 +118,12 @@ const char* developerLabel(int index) {
         case 3: return "Parser logs";
         case 4: return "Input event logs";
 #if MI23_ENABLE_DEVELOPER_OPTIONS
-        case 5: return "Filesystem Status";
-        case 6: return "Remount Filesystem";
-        case 7: return "Format Filesystem";
-        case 8: return "Erase Filesystem";
-        case 9: return "Run FS Check";
+        case 5: return "Companion Link";
+        case 6: return "Filesystem Status";
+        case 7: return "Remount Filesystem";
+        case 8: return "Format Filesystem";
+        case 9: return "Erase Filesystem";
+        case 10: return "Run FS Check";
 #endif
         default: return "";
     }
@@ -167,6 +172,7 @@ SettingsApp::SettingsApp(Display& display,
     , m_hasProbeResult(false)
     , m_dirty(false)
     , m_saveRequested(false)
+    , m_companionLinkRequested(false)
     , m_needsRender(true)
     , m_contentBounds{0, 22, DISPLAY_WIDTH, DISPLAY_HEIGHT - 22} {}
 
@@ -180,6 +186,7 @@ void SettingsApp::enter() {
     m_probeResult = {};
     m_hasProbeResult = false;
     m_saveRequested = false;
+    m_companionLinkRequested = false;
     invalidateContent();
     requestRender();
 }
@@ -465,6 +472,14 @@ bool SettingsApp::consumeSaveRequest() {
     return requested;
 }
 
+bool SettingsApp::consumeCompanionLinkRequest() {
+    const bool requested = m_companionLinkRequested;
+    if (requested) {
+        m_companionLinkRequested = false;
+    }
+    return requested;
+}
+
 void SettingsApp::markSaved() {
     m_dirty = false;
     m_saveRequested = false;
@@ -561,7 +576,7 @@ void SettingsApp::renderDeveloper(int x, int y, int w, int h) {
     for (int i = 0; i < DEV_ITEM_COUNT; ++i) {
         const int rowY = listY + i * rowHeight;
         const bool selected = i == m_developerIndex;
-        const bool destructive = i == 7 || i == 8;
+        const bool destructive = i == 8 || i == 9;
         m_display.fillRect(x + 6,
                            rowY - 3,
                            w - 12,
@@ -880,20 +895,32 @@ void SettingsApp::toggleDeveloperSelected() {
 
 void SettingsApp::runDeveloperAction() {
 #if MI23_ENABLE_DEVELOPER_OPTIONS
-    if (!m_filesystem) {
-        setDeveloperMessage("Storage backend unavailable.");
-        invalidateContent();
-        return;
-    }
-
     switch (m_developerIndex) {
         case 5:
+#if MI23_COMPANION_DEBUG_LOGS
+            std::printf("[settings][dev] companion link requested\n");
+#endif
+            m_companionLinkRequested = true;
+            setDeveloperMessage("");
+            invalidateContent();
+            return;
+        case 6:
+            if (!m_filesystem) {
+                setDeveloperMessage("Storage backend unavailable.");
+                invalidateContent();
+                return;
+            }
             std::printf("[settings][dev] filesystem status opened\n");
             setDeveloperMessage("");
             m_screen = Screen::FilesystemStatus;
             invalidateContent();
             return;
-        case 6: {
+        case 7: {
+            if (!m_filesystem) {
+                setDeveloperMessage("Storage backend unavailable.");
+                invalidateContent();
+                return;
+            }
             std::printf("[settings][dev] remount filesystem requested\n");
             const AxiomFS::Status status = m_filesystem->remount();
             char message[96] = {};
@@ -905,19 +932,24 @@ void SettingsApp::runDeveloperAction() {
             invalidateContent();
             return;
         }
-        case 7:
+        case 8:
             std::printf("[settings][dev] format filesystem prompt opened\n");
             setDeveloperMessage("");
             m_screen = Screen::DeveloperFormatConfirm;
             invalidateContent();
             return;
-        case 8:
+        case 9:
             std::printf("[settings][dev] erase filesystem prompt opened\n");
             setDeveloperMessage("");
             m_screen = Screen::EraseConfirm;
             invalidateContent();
             return;
-        case 9:
+        case 10:
+            if (!m_filesystem) {
+                setDeveloperMessage("Storage backend unavailable.");
+                invalidateContent();
+                return;
+            }
             std::printf("[settings][dev] filesystem check requested\n");
             m_probeResult = m_filesystem->runProbe();
             m_hasProbeResult = true;

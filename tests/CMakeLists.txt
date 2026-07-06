@@ -17,11 +17,13 @@ add_executable(mi23_tests
         test_graph_renderer.cpp
         test_home_screen.cpp
         test_math_typeset.cpp
+        test_companion_protocol.cpp
         test_settings_app.cpp
         test_settings_store.cpp
         test_system_status.cpp
         ../firmware/app/calculator/calculator_app.cpp
         ../firmware/app/boot/boot_manager.cpp
+        ../firmware/app/companion/companion_link_app.cpp
         ../firmware/app/files/file_browser_app.cpp
         ../firmware/app/graphing/graph_app.cpp
         ../firmware/app/graphing/graph_renderer.cpp
@@ -32,6 +34,8 @@ add_executable(mi23_tests
         ../firmware/app/ui/system_status.cpp
         ../firmware/app/ui/title_bar.cpp
         ../firmware/hal/settings_store.cpp
+        ../firmware/core/companion/CompanionProtocol.cpp
+        ../firmware/core/companion/CompanionSession.cpp
         ../firmware/platform/host/simulator_keypad.cpp
         ../firmware/platform/host/settings_store_host.cpp
         ../firmware/platform/host/startup_host.cpp

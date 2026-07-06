@@ -6,6 +6,7 @@
 
 #include "app/boot/boot_manager.h"
 #include "app/calculator/calculator_app.h"
+#include "app/companion/companion_link_app.h"
 #include "app/files/file_browser_app.h"
 #include "app/graphing/graph_app.h"
 #include "app/home/calculator_home.h"
@@ -13,6 +14,7 @@
 #include "app/settings/settings_state.h"
 #include "app/ui/title_bar.h"
 #include "display_rp2350.h"
+#include "core/companion/CompanionProtocol.h"
 #include "hal/system_time.h"
 #include "keypad_rp2350_2.h"
 #include "platform/rp2350/axiom_fs_flash_block_device.h"
@@ -20,6 +22,7 @@
 #include "platform/rp2350/keypad_rp2350.h"
 #include "platform/rp2350/settings_store_rp2350.h"
 #include "platform/rp2350/startup_rp2350.h"
+#include "platform/rp2350/usb_cdc_transport_rp2350.h"
 
 #include <cstdio>
 
@@ -36,6 +39,10 @@ static constexpr int CONTENT_H = SCREEN_H - CONTENT_Y;
 
 #ifndef MI23_FIRMWARE_VERSION
 #define MI23_FIRMWARE_VERSION "dev"
+#endif
+
+#ifndef MI23_HARDWARE_REVISION
+#define MI23_HARDWARE_REVISION "unknown"
 #endif
 
 void waitForUsbSerialInDebugBuild() {
@@ -99,6 +106,7 @@ public:
                         CalculatorApp& calculator,
                         FileBrowserApp& files,
                         SettingsApp& settingsApp,
+                        CompanionLinkApp& companionLink,
                         SettingsStore& settingsStore,
                         AxiomFS::FileSystem& filesystem,
                         BootManager& boot,
@@ -109,6 +117,7 @@ public:
         , m_calculator(calculator)
         , m_files(files)
         , m_settingsApp(settingsApp)
+        , m_companionLink(companionLink)
         , m_settingsStore(settingsStore)
         , m_boot(boot)
         , m_settings(settings)
@@ -126,6 +135,9 @@ public:
     }
 
     void tick() {
+        const uint64_t nowMs = systemTimeMs();
+        m_companionLink.tick(nowMs);
+
         if (m_activeApp == AppId::Boot) {
             m_boot.tick();
             if (m_boot.isFinished()) {
@@ -170,7 +182,7 @@ public:
 
         if (m_activeApp == AppId::Calculator) {
             m_calculator.handleKey(pressed);
-            const bool blinkChanged = m_calculator.updateBlink(systemTimeMs());
+            const bool blinkChanged = m_calculator.updateBlink(nowMs);
             if (blinkChanged && m_settings.developer.inputEventLogs) {
                 std::printf("[render] rp2350 blink toggled; render requested\n");
             }
@@ -204,9 +216,27 @@ public:
                 goHome();
                 return;
             }
+            if (m_settingsApp.consumeCompanionLinkRequest()) {
+                maybePersistSettings();
+                launch(AppId::Companion);
+                return;
+            }
             if (m_settingsApp.needsRender()) {
                 drawCurrentShell();
                 m_settingsApp.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
+                m_display.present();
+            }
+            return;
+        }
+
+        if (m_activeApp == AppId::Companion) {
+            if (m_companionLink.handleKey(pressed)) {
+                goHome();
+                return;
+            }
+            if (m_companionLink.needsRender()) {
+                drawCurrentShell();
+                m_companionLink.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
                 m_display.present();
             }
         }
@@ -219,6 +249,7 @@ private:
     CalculatorApp& m_calculator;
     FileBrowserApp& m_files;
     SettingsApp& m_settingsApp;
+    CompanionLinkApp& m_companionLink;
     SettingsStore& m_settingsStore;
     BootManager& m_boot;
     SettingsState& m_settings;
@@ -262,6 +293,9 @@ private:
 
     void goHome() {
         if (m_activeApp != AppId::Home) {
+            if (m_activeApp == AppId::Companion) {
+                m_display.setTimingLogsEnabled(true);
+            }
             maybePersistSettings();
             m_home.enter();
             m_activeApp = AppId::Home;
@@ -322,6 +356,17 @@ private:
             drawCurrentShell();
             m_settingsApp.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
             m_display.present();
+            return;
+        }
+
+        if (app == AppId::Companion) {
+            m_activeApp = AppId::Companion;
+            m_display.setTimingLogsEnabled(false);
+            m_companionLink.enter(systemTimeMs());
+            m_shellDirty = true;
+            drawCurrentShell();
+            m_companionLink.renderContent(0, CONTENT_Y, SCREEN_W, CONTENT_H);
+            m_display.present();
         }
     }
 
@@ -356,6 +401,11 @@ int main() {
     CalculatorApp calculator(display, keypad, rpCalculatorConfig(settings, &startup.filesystem()));
     FileBrowserApp files(display, &startup.filesystem());
     SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
+    RP2350UsbCdcTransport companionTransport;
+    Companion::CompanionProtocol companionProtocol(startup.filesystem(),
+                                                   {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION});
+    Companion::CompanionSession companionSession(companionTransport, companionProtocol);
+    CompanionLinkApp companionLink(display, companionSession);
     BootManager boot(display, settings, startup);
 
     RP2350AppController app(display,
@@ -364,6 +414,7 @@ int main() {
                             calculator,
                             files,
                             settingsApp,
+                            companionLink,
                             settingsStore,
                             startup.filesystem(),
                             boot,

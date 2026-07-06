@@ -7,19 +7,31 @@
 #include "platform/host/simulator_keypad.h"
 #include "platform/host/settings_store_host.h"
 #include "platform/host/startup_host.h"
+#include "platform/host/usb_cdc_transport_host.h"
 #include "app/boot/boot_manager.h"
 #include "app/home/calculator_home.h"
 #include "app/calculator/calculator_app.h"
+#include "app/companion/companion_link_app.h"
 #include "app/files/file_browser_app.h"
 #include "app/graphing/graph_app.h"
 #include "app/settings/settings_app.h"
 #include "app/settings/settings_state.h"
 #include "app/ui/title_bar.h"
+#include "core/companion/CompanionProtocol.h"
 #include "hal/system_time.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 
 namespace {
+
+#ifndef MI23_FIRMWARE_VERSION
+#define MI23_FIRMWARE_VERSION "dev"
+#endif
+
+#ifndef MI23_HARDWARE_REVISION
+#define MI23_HARDWARE_REVISION "simulator"
+#endif
+
 CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings, AxiomFS::FileSystem* filesystem) {
     CalculatorAppConfig config;
     config.showOnScreenKeypad = false;
@@ -46,6 +58,10 @@ public:
         , m_simulatorKeypad()
         , m_graph(&m_settings, &m_startup.filesystem())
         , m_settingsApp(display, m_settings, "Simulator", &m_startup.filesystem())
+        , m_companionTransport()
+        , m_companionProtocol(m_startup.filesystem(), {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION})
+        , m_companionSession(m_companionTransport, m_companionProtocol)
+        , m_companionLink(display, m_companionSession)
         , m_activeApp(AppId::Boot)
         , m_needsFrame(true)
         , m_shellDirty(true)
@@ -103,13 +119,19 @@ public:
     }
 
     void update() {
-        if (m_activeApp == AppId::Calculator && m_calculator.updateBlink(systemTimeMs())) {
+        const uint64_t nowMs = systemTimeMs();
+        m_companionLink.tick(nowMs);
+
+        if (m_activeApp == AppId::Calculator && m_calculator.updateBlink(nowMs)) {
             m_needsFrame = true;
         }
         if (m_activeApp == AppId::Home && m_home.needsRender()) {
             m_needsFrame = true;
         }
         if (m_activeApp == AppId::Files && m_files.needsRender()) {
+            m_needsFrame = true;
+        }
+        if (m_activeApp == AppId::Companion && m_companionLink.needsRender()) {
             m_needsFrame = true;
         }
 
@@ -144,6 +166,9 @@ public:
         } else if (m_activeApp == AppId::Settings) {
             drawSystemTitleBar();
             m_settingsApp.renderContent(0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
+        } else if (m_activeApp == AppId::Companion) {
+            drawSystemTitleBar();
+            m_companionLink.renderContent(0, CONTENT_Y, DISPLAY_WIDTH, CONTENT_H);
         }
 
         if (m_activeApp != AppId::Boot) {
@@ -170,6 +195,10 @@ private:
     SimulatorKeypad m_simulatorKeypad;
     GraphApp m_graph;
     SettingsApp m_settingsApp;
+    HostUsbCdcTransport m_companionTransport;
+    Companion::CompanionProtocol m_companionProtocol;
+    Companion::CompanionSession m_companionSession;
+    CompanionLinkApp m_companionLink;
     AppId m_activeApp;
     bool m_needsFrame;
     bool m_shellDirty;
@@ -200,6 +229,14 @@ private:
         } else if (m_activeApp == AppId::Settings) {
             if (m_settingsApp.handleKey(key)) {
                 maybePersistSettings();
+                goHome();
+            }
+            if (m_settingsApp.consumeCompanionLinkRequest()) {
+                maybePersistSettings();
+                launch(AppId::Companion);
+            }
+        } else if (m_activeApp == AppId::Companion) {
+            if (m_companionLink.handleKey(key)) {
                 goHome();
             }
         }
@@ -263,7 +300,8 @@ private:
 
     void launch(AppId app) {
         if (app == AppId::Calculator || app == AppId::Graphing ||
-            app == AppId::Files || app == AppId::Settings) {
+            app == AppId::Files || app == AppId::Settings ||
+            app == AppId::Companion) {
             m_activeApp = app;
             m_shellDirty = true;
             if (app == AppId::Calculator) {
@@ -276,6 +314,8 @@ private:
                 m_files.enter();
             } else if (app == AppId::Settings) {
                 m_settingsApp.enter();
+            } else if (app == AppId::Companion) {
+                m_companionLink.enter(systemTimeMs());
             }
             m_needsFrame = true;
         }

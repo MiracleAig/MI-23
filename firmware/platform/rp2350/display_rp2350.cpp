@@ -14,7 +14,6 @@
 
 namespace {
 
-constexpr bool DISPLAY_RP2350_LOG_TIMING = true;
 constexpr int FULL_SCREEN_PIXELS = DISPLAY_WIDTH * DISPLAY_HEIGHT;
 
 uint32_t elapsedUs(uint32_t startUs) {
@@ -58,7 +57,7 @@ void DisplayRP2350::clear(Color color) {
                                                                  rect.x)];
         std::fill(line, line + rect.w, value);
     }
-    if (DISPLAY_RP2350_LOG_TIMING && rect.w * rect.h == FULL_SCREEN_PIXELS) {
+    if (m_timingLogsEnabled && rect.w * rect.h == FULL_SCREEN_PIXELS) {
         const uint32_t us = elapsedUs(startUs);
         std::printf("[display] framebuffer clear full-screen pixels=%d time=%lu us (%lu ms)\n",
                     FULL_SCREEN_PIXELS,
@@ -169,7 +168,7 @@ void DisplayRP2350::present() {
                             DISPLAY_WIDTH);
     }
 
-    if (DISPLAY_RP2350_LOG_TIMING) {
+    if (m_timingLogsEnabled) {
         const uint32_t us = elapsedUs(startUs);
         std::printf("[display] present rects=%d pixels=%d time=%lu us (%lu ms)%s\n",
                     regionCount,
@@ -180,4 +179,9 @@ void DisplayRP2350::present() {
     }
 
     m_presentRegions.clear();
+}
+
+void DisplayRP2350::setTimingLogsEnabled(bool enabled) {
+    m_timingLogsEnabled = enabled;
+    m_display.setTimingLogsEnabled(enabled);
 }

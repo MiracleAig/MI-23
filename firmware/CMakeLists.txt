@@ -33,6 +33,8 @@ if(PLATFORM STREQUAL "host")
             app/calculator/calculator_app.cpp
             app/calculator/calculator_app.h
             app/calculator/history.h
+            app/companion/companion_link_app.cpp
+            app/companion/companion_link_app.h
             app/files/file_browser_app.cpp
             app/files/file_browser_app.h
             app/graphing/graph_app.cpp
@@ -54,6 +56,11 @@ if(PLATFORM STREQUAL "host")
             graphics/font.h
             hal/display.h
             hal/keypad.h
+            hal/usb_cdc_transport.h
+            core/companion/CompanionProtocol.cpp
+            core/companion/CompanionProtocol.h
+            core/companion/CompanionSession.cpp
+            core/companion/CompanionSession.h
             platform/host/settings_store_host.cpp
             platform/host/settings_store_host.h
             platform/host/startup_host.cpp

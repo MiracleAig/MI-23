@@ -40,7 +40,10 @@ uint32_t elapsedUs(uint32_t startUs) {
     return time_us_32() - startUs;
 }
 
-void logPixelPushTiming(const char* op, int x, int y, int w, int h, uint32_t us) {
+void logPixelPushTiming(bool enabled, const char* op, int x, int y, int w, int h, uint32_t us) {
+    if (!enabled) {
+        return;
+    }
     if (!ili9488_config::LCD_LOG_TIMING) {
         return;
     }
@@ -353,7 +356,8 @@ void ILI9488::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t colo
     }
 
     csHigh();
-    logPixelPushTiming("fillRect",
+    logPixelPushTiming(m_timingLogsEnabled,
+                       "fillRect",
                        x,
                        y,
                        w,
@@ -419,12 +423,17 @@ void ILI9488::writeRect(int16_t x,
     }
 
     csHigh();
-    logPixelPushTiming("writeRect",
+    logPixelPushTiming(m_timingLogsEnabled,
+                       "writeRect",
                        x,
                        y,
                        w,
                        h,
                        elapsedUs(startUs));
+}
+
+void ILI9488::setTimingLogsEnabled(bool enabled) {
+    m_timingLogsEnabled = enabled;
 }
 
 void ILI9488::fillScreen(uint16_t color) {
