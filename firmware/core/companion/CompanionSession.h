@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/companion/CompanionProtocol.h"
+#include "core/companion/CompanionUtils.h"
 #include "hal/usb_cdc_transport.h"
 
 #include <cstdint>
@@ -17,7 +18,7 @@ public:
     bool isConnected() const;
 
 private:
-    static constexpr std::size_t kMaxLineLength = 96;
+    static constexpr std::size_t kMaxLineLength = kMaxMessageLength;
     static constexpr uint64_t kLineTimeoutMs = 5000;
 
     UsbCdcTransport& m_transport;

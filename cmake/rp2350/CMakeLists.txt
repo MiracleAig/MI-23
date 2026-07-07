@@ -21,6 +21,8 @@ add_executable(mi23
         ${ILI9488_SOURCE_DIR}/ili9488.h
         ${RP2350_PLATFORM_SOURCE_DIR}/display_rp2350.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/display_rp2350.h
+        ${RP2350_PLATFORM_SOURCE_DIR}/companion_system_actions_rp2350.cpp
+        ${RP2350_PLATFORM_SOURCE_DIR}/companion_system_actions_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350.cpp
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350.h
         ${RP2350_PLATFORM_SOURCE_DIR}/keypad_rp2350_2.cpp
@@ -42,8 +44,13 @@ add_executable(mi23
         ${RP2350_PLATFORM_SOURCE_DIR}/usb_cdc_transport_rp2350.h
         ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionProtocol.cpp
         ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionProtocol.h
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionJson.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionJson.h
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionSystemActions.h
         ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionSession.cpp
         ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionSession.h
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionUtils.cpp
+        ${PROJECT_SOURCE_DIR}/firmware/core/companion/CompanionUtils.h
         ${PROJECT_SOURCE_DIR}/firmware/app/home/calculator_home.h
         ${PROJECT_SOURCE_DIR}/firmware/app/files/file_browser_app.h
         ${PROJECT_SOURCE_DIR}/firmware/app/graphing/graph_app.h
@@ -66,6 +73,8 @@ target_link_libraries(mi23 PRIVATE
         pico_stdlib
         hardware_spi
         hardware_flash
+        hardware_watchdog
+        pico_bootrom
 )
 
 target_include_directories(mi23 PRIVATE

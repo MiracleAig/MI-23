@@ -35,7 +35,9 @@ add_executable(mi23_tests
         ../firmware/app/ui/title_bar.cpp
         ../firmware/hal/settings_store.cpp
         ../firmware/core/companion/CompanionProtocol.cpp
+        ../firmware/core/companion/CompanionJson.cpp
         ../firmware/core/companion/CompanionSession.cpp
+        ../firmware/core/companion/CompanionUtils.cpp
         ../firmware/platform/host/simulator_keypad.cpp
         ../firmware/platform/host/settings_store_host.cpp
         ../firmware/platform/host/startup_host.cpp

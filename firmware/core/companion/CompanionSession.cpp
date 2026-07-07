@@ -53,6 +53,8 @@ void CompanionSession::poll(uint64_t nowMs) {
             handleByte(buffer[i], nowMs);
         }
     } while (count == static_cast<int>(sizeof(buffer)));
+
+    m_protocol.pollSystemActions(nowMs);
 }
 
 bool CompanionSession::isConnected() const {
@@ -68,7 +70,7 @@ void CompanionSession::handleByte(uint8_t byte, uint64_t nowMs) {
         if (m_discardingLine) {
             m_discardingLine = false;
             m_line.clear();
-            sendResponse("ERR LINE_TOO_LONG\n");
+            sendResponse("{\"id\":0,\"ok\":false,\"error\":{\"code\":\"invalid_argument\",\"message\":\"Request is too long\"}}\n");
             return;
         }
         processLine();
@@ -111,7 +113,20 @@ void CompanionSession::sendResponse(const std::string& response) {
         return;
     }
 
-    if (m_transport.write(reinterpret_cast<const uint8_t*>(response.data()), response.size())) {
+    static constexpr std::size_t kWriteChunkSize = 128;
+    bool ok = true;
+    std::size_t written = 0;
+    while (written < response.size()) {
+        const std::size_t remaining = response.size() - written;
+        const std::size_t chunk = remaining < kWriteChunkSize ? remaining : kWriteChunkSize;
+        if (!m_transport.write(reinterpret_cast<const uint8_t*>(response.data() + written), chunk)) {
+            ok = false;
+            break;
+        }
+        written += chunk;
+    }
+
+    if (ok) {
         logCompanion("[companion] response sent: %u bytes\n",
                      static_cast<unsigned>(response.size()));
     } else {

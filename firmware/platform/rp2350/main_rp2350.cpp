@@ -19,6 +19,7 @@
 #include "keypad_rp2350_2.h"
 #include "platform/rp2350/axiom_fs_flash_block_device.h"
 #include "platform/rp2350/axiom_fs_flash_config.h"
+#include "platform/rp2350/companion_system_actions_rp2350.h"
 #include "platform/rp2350/keypad_rp2350.h"
 #include "platform/rp2350/settings_store_rp2350.h"
 #include "platform/rp2350/startup_rp2350.h"
@@ -402,8 +403,12 @@ int main() {
     FileBrowserApp files(display, &startup.filesystem());
     SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
     RP2350UsbCdcTransport companionTransport;
+    RP2350CompanionSystemActions companionSystemActions;
     Companion::CompanionProtocol companionProtocol(startup.filesystem(),
-                                                   {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION});
+                                                   settings,
+                                                   settingsStore,
+                                                   {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION},
+                                                   &companionSystemActions);
     Companion::CompanionSession companionSession(companionTransport, companionProtocol);
     CompanionLinkApp companionLink(display, companionSession);
     BootManager boot(display, settings, startup);

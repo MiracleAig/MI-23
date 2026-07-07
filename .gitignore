@@ -42,6 +42,7 @@
 
 # Build output
 build/
+/build-*/
 build-host/
 build-rp2350/
 cmake-build-debug/

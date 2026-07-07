@@ -59,7 +59,10 @@ public:
         , m_graph(&m_settings, &m_startup.filesystem())
         , m_settingsApp(display, m_settings, "Simulator", &m_startup.filesystem())
         , m_companionTransport()
-        , m_companionProtocol(m_startup.filesystem(), {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION})
+        , m_companionProtocol(m_startup.filesystem(),
+                              m_settings,
+                              m_settingsStore,
+                              {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION})
         , m_companionSession(m_companionTransport, m_companionProtocol)
         , m_companionLink(display, m_companionSession)
         , m_activeApp(AppId::Boot)

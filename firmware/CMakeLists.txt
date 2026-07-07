@@ -59,8 +59,13 @@ if(PLATFORM STREQUAL "host")
             hal/usb_cdc_transport.h
             core/companion/CompanionProtocol.cpp
             core/companion/CompanionProtocol.h
+            core/companion/CompanionJson.cpp
+            core/companion/CompanionJson.h
+            core/companion/CompanionSystemActions.h
             core/companion/CompanionSession.cpp
             core/companion/CompanionSession.h
+            core/companion/CompanionUtils.cpp
+            core/companion/CompanionUtils.h
             platform/host/settings_store_host.cpp
             platform/host/settings_store_host.h
             platform/host/startup_host.cpp
