@@ -3,6 +3,7 @@
 //
 
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 
 #include "app/boot/boot_manager.h"
 #include "app/calculator/calculator_app.h"
@@ -17,6 +18,7 @@
 #include "core/companion/CompanionProtocol.h"
 #include "hal/system_time.h"
 #include "keypad_rp2350_2.h"
+#include "mi23_metadata.h"
 #include "platform/rp2350/axiom_fs_flash_block_device.h"
 #include "platform/rp2350/axiom_fs_flash_config.h"
 #include "platform/rp2350/companion_system_actions_rp2350.h"
@@ -25,6 +27,8 @@
 #include "platform/rp2350/startup_rp2350.h"
 #include "platform/rp2350/usb_cdc_transport_rp2350.h"
 
+#include <cstddef>
+#include <cstring>
 #include <cstdio>
 
 namespace {
@@ -33,18 +37,6 @@ static constexpr int SCREEN_W = DISPLAY_WIDTH;
 static constexpr int SCREEN_H = DISPLAY_HEIGHT;
 static constexpr int CONTENT_Y = SystemTitleBar::kHeight;
 static constexpr int CONTENT_H = SCREEN_H - CONTENT_Y;
-
-#ifndef MI23_BUILD_TARGET
-#define MI23_BUILD_TARGET "rp2350"
-#endif
-
-#ifndef MI23_FIRMWARE_VERSION
-#define MI23_FIRMWARE_VERSION "dev"
-#endif
-
-#ifndef MI23_HARDWARE_REVISION
-#define MI23_HARDWARE_REVISION "unknown"
-#endif
 
 void waitForUsbSerialInDebugBuild() {
 #ifndef NDEBUG
@@ -64,6 +56,31 @@ void logEarlyBootDiagnostics(AxiomFS::FileSystem& filesystem) {
     std::printf("[boot][rp2350] filesystem offset=%lu size=%lu\n",
                 static_cast<unsigned long>(RP2350FlashLayout::kLittleFsOffset),
                 static_cast<unsigned long>(RP2350FlashLayout::kLittleFsSize));
+}
+
+void appendBounded(char* out, std::size_t capacity, std::size_t& pos, const char* text) {
+    if (!out || capacity == 0u || !text) {
+        return;
+    }
+    while (*text != '\0' && pos + 1u < capacity) {
+        out[pos++] = *text++;
+    }
+    out[pos] = '\0';
+}
+
+void buildStableDeviceId(char* out, std::size_t capacity) {
+    if (!out || capacity == 0u) {
+        return;
+    }
+
+    std::memset(out, 0, capacity);
+    std::size_t pos = 0;
+    appendBounded(out, capacity, pos, MI23::Metadata::kProductId);
+    appendBounded(out, capacity, pos, "-");
+
+    char boardId[2u * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1u] = {};
+    pico_get_unique_board_id_string(boardId, sizeof(boardId));
+    appendBounded(out, capacity, pos, boardId);
 }
 
 CalculatorAppConfig rpCalculatorConfig(const SettingsState& settings, AxiomFS::FileSystem* filesystem) {
@@ -404,10 +421,15 @@ int main() {
     SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
     RP2350UsbCdcTransport companionTransport;
     RP2350CompanionSystemActions companionSystemActions;
+    char deviceId[40] = {};
+    buildStableDeviceId(deviceId, sizeof(deviceId));
+    Companion::DeviceInfo deviceInfo{};
+    deviceInfo.deviceId = deviceId;
+    deviceInfo.serialNumber = deviceId;
     Companion::CompanionProtocol companionProtocol(startup.filesystem(),
                                                    settings,
                                                    settingsStore,
-                                                   {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION},
+                                                   deviceInfo,
                                                    &companionSystemActions);
     Companion::CompanionSession companionSession(companionTransport, companionProtocol);
     CompanionLinkApp companionLink(display, companionSession);

@@ -1,7 +1,6 @@
 set(RP2350_PLATFORM_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/platform/rp2350)
 set(ILI9488_SOURCE_DIR ${PROJECT_SOURCE_DIR}/firmware/drivers/ili9488)
 
-set(MI23_FIRMWARE_VERSION "dev" CACHE STRING "MI-23 firmware version label")
 set(MI23_ENABLE_LITTLEFS ON CACHE BOOL "Build the RP2350 AxiomFS backend with LittleFS" FORCE)
 if(NOT MI23_LITTLEFS_SOURCE_DIR)
     set(MI23_LITTLEFS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/littlefs"
@@ -75,6 +74,7 @@ target_link_libraries(mi23 PRIVATE
         hardware_flash
         hardware_watchdog
         pico_bootrom
+        pico_unique_id
 )
 
 target_include_directories(mi23 PRIVATE
@@ -82,8 +82,6 @@ target_include_directories(mi23 PRIVATE
 )
 
 target_compile_definitions(mi23 PRIVATE
-        MI23_BUILD_TARGET="rp2350"
-        MI23_FIRMWARE_VERSION="${MI23_FIRMWARE_VERSION}"
         MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
 )
 
@@ -118,3 +116,12 @@ else()
 endif()
 
 pico_add_extra_outputs(mi23)
+
+add_custom_command(TARGET mi23 POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                -DMI23_ELF=$<TARGET_FILE:mi23>
+                -DMI23_OBJDUMP=${CMAKE_OBJDUMP}
+                -DMI23_FLASH_BOUNDARY=${MI23_FILESYSTEM_OFFSET_BYTES}
+                -P ${PROJECT_SOURCE_DIR}/cmake/check_rp2350_flash_boundary.cmake
+        COMMENT "Checking RP2350 firmware image stays below LittleFS flash boundary"
+)

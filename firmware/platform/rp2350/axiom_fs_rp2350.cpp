@@ -216,6 +216,35 @@ AxiomFS::Status RP2350AxiomFSBackend::unmount() {
 #endif
 }
 
+AxiomFS::Status RP2350AxiomFSBackend::sync() {
+#if MI23_ENABLE_LITTLEFS
+    if (!m_mounted) {
+        return AxiomFS::Status::Ok;
+    }
+
+    const int result = lfs_fs_mkconsistent(&m_lfs);
+    if (result != 0) {
+        m_lastLittleFsError = result;
+        std::printf("[fs][rp2350] LittleFS consistency sync result=%d error=%s status=%s\n",
+                    result,
+                    littleFsErrorName(result),
+                    AxiomFS::statusToString(mapLittleFsError(result)));
+        return mapLittleFsError(result);
+    }
+
+    const int blockSync = RP2350FlashBlockDevice::sync();
+    if (blockSync != 0) {
+        std::printf("[fs][rp2350] flash block sync failed result=%d\n", blockSync);
+        return AxiomFS::Status::IoError;
+    }
+    std::printf("[fs][rp2350] LittleFS consistency sync result=0 status=%s\n",
+                AxiomFS::statusToString(AxiomFS::Status::Ok));
+    return AxiomFS::Status::Ok;
+#else
+    return AxiomFS::Status::Unsupported;
+#endif
+}
+
 AxiomFS::Status RP2350AxiomFSBackend::format() {
     m_lastMountFailureReason = AxiomFS::MountFailureReason::None;
     m_lastLittleFsError = 0;

@@ -12,6 +12,7 @@ public:
 
     AxiomFS::Status mount() override;
     AxiomFS::Status unmount() override;
+    AxiomFS::Status sync() override;
     AxiomFS::Status format() override;
     AxiomFS::Status exists(const std::string& path, bool& outExists) override;
     AxiomFS::ReadResult readFile(const std::string& path) override;

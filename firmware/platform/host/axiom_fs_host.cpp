@@ -60,6 +60,10 @@ AxiomFS::Status HostAxiomFSBackend::unmount() {
     return AxiomFS::Status::Ok;
 }
 
+AxiomFS::Status HostAxiomFSBackend::sync() {
+    return AxiomFS::Status::Ok;
+}
+
 AxiomFS::Status HostAxiomFSBackend::format() {
     if (m_root.empty()) {
         return AxiomFS::Status::InvalidPath;

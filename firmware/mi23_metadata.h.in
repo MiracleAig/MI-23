@@ -1,0 +1,52 @@
+#pragma once
+
+#include <cstdint>
+
+#define MI23_PRODUCT_ID_STRING "@MI23_PRODUCT_ID@"
+#define MI23_PRODUCT_NAME_STRING "@MI23_PRODUCT_NAME@"
+#define MI23_FIRMWARE_VERSION_STRING "@MI23_FIRMWARE_VERSION@"
+#define MI23_FIRMWARE_VERSION_LABEL "Firmware: " MI23_FIRMWARE_VERSION_STRING
+#define MI23_HARDWARE_REVISION_STRING "@MI23_HARDWARE_REVISION@"
+#define MI23_PLATFORM_ID_STRING "@MI23_PLATFORM_ID@"
+#define MI23_DEFAULT_DEVICE_ID_STRING "@MI23_DEFAULT_DEVICE_ID@"
+
+// Backward-compatible macro names for platform code that still consumes
+// compile-time string macros.
+#define MI23_PRODUCT_ID MI23_PRODUCT_ID_STRING
+#define MI23_PRODUCT_NAME MI23_PRODUCT_NAME_STRING
+#define MI23_FIRMWARE_VERSION MI23_FIRMWARE_VERSION_STRING
+#define MI23_HARDWARE_REVISION MI23_HARDWARE_REVISION_STRING
+#define MI23_BUILD_TARGET MI23_PLATFORM_ID_STRING
+
+namespace MI23::Metadata {
+
+inline constexpr const char* kProductId = MI23_PRODUCT_ID_STRING;
+inline constexpr const char* kProductName = MI23_PRODUCT_NAME_STRING;
+inline constexpr const char* kFirmwareVersion = MI23_FIRMWARE_VERSION_STRING;
+inline constexpr const char* kFirmwareVersionLabel = MI23_FIRMWARE_VERSION_LABEL;
+inline constexpr const char* kHardwareRevision = MI23_HARDWARE_REVISION_STRING;
+inline constexpr const char* kPlatform = MI23_PLATFORM_ID_STRING;
+inline constexpr const char* kDefaultDeviceId = MI23_DEFAULT_DEVICE_ID_STRING;
+inline constexpr int kCompanionProtocolVersion = @MI23_COMPANION_PROTOCOL_VERSION@;
+inline constexpr int kFilesystemSchemaVersion = @MI23_FILESYSTEM_SCHEMA_VERSION@;
+inline constexpr uint32_t kFlashSizeBytes = @MI23_FLASH_SIZE_BYTES@u;
+inline constexpr uint32_t kFilesystemOffsetBytes = @MI23_FILESYSTEM_OFFSET_BYTES@u;
+inline constexpr uint32_t kFilesystemSizeBytes = @MI23_FILESYSTEM_SIZE_BYTES@u;
+inline constexpr bool kSupportsBootselReboot = @MI23_SUPPORTS_BOOTSEL_REBOOT_CPP@;
+inline constexpr bool kSupportsFirmwareUpdate = @MI23_SUPPORTS_FIRMWARE_UPDATE_CPP@;
+inline constexpr bool kSupportsFileTransfer = @MI23_SUPPORTS_FILE_TRANSFER_CPP@;
+inline constexpr bool kSupportsFilesystemBackup = @MI23_SUPPORTS_FILESYSTEM_BACKUP_CPP@;
+
+static_assert(kProductId[0] != '\0', "MI-23 product id must not be empty");
+static_assert(kProductName[0] != '\0', "MI-23 product name must not be empty");
+static_assert(kFirmwareVersion[0] != '\0', "MI-23 firmware version must not be empty");
+static_assert(kHardwareRevision[0] != '\0', "MI-23 hardware revision must not be empty");
+static_assert(kPlatform[0] != '\0', "MI-23 platform id must not be empty");
+static_assert(kDefaultDeviceId[0] != '\0', "MI-23 default device id must not be empty");
+static_assert(kCompanionProtocolVersion > 0, "MI-23 companion protocol version must be positive");
+static_assert(kFilesystemSchemaVersion > 0, "MI-23 filesystem schema version must be positive");
+static_assert(kFilesystemSizeBytes == 0u ||
+                  kFilesystemOffsetBytes <= kFlashSizeBytes - kFilesystemSizeBytes,
+              "MI-23 filesystem region must fit within flash");
+
+} // namespace MI23::Metadata

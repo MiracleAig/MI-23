@@ -3,10 +3,14 @@
 #include "core/companion/CompanionProtocol.h"
 #include "core/companion/CompanionSystemActions.h"
 #include "core/companion/CompanionUtils.h"
+#include "mi23_metadata.h"
 #include "platform/host/axiom_fs_host.h"
+#include "platform/host/companion_system_actions_host.h"
 
 #include <algorithm>
 #include <filesystem>
+#include <functional>
+#include <limits>
 
 namespace {
 
@@ -44,6 +48,35 @@ public:
     int bootloaderRequests = 0;
 };
 
+class SyncCountingHostAxiomFSBackend : public HostAxiomFSBackend {
+public:
+    using HostAxiomFSBackend::HostAxiomFSBackend;
+
+    AxiomFS::Status sync() override {
+        syncCount++;
+        return syncStatus;
+    }
+
+    int syncCount = 0;
+    AxiomFS::Status syncStatus = AxiomFS::Status::Ok;
+};
+
+class ReentrantHostAxiomFSBackend : public HostAxiomFSBackend {
+public:
+    using HostAxiomFSBackend::HostAxiomFSBackend;
+
+    AxiomFS::Status writeFile(const std::string& path,
+                              const uint8_t* data,
+                              std::size_t size) override {
+        if (onWrite) {
+            onWrite();
+        }
+        return HostAxiomFSBackend::writeFile(path, data, size);
+    }
+
+    std::function<void()> onWrite;
+};
+
 class CompanionProtocolFixture : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -60,6 +93,11 @@ protected:
 
     Companion::CompanionProtocol makeProtocol(Companion::CompanionSystemActions* actions = nullptr) {
         return Companion::CompanionProtocol(fs, settings, settingsStore, {"test-fw", "rev-a", "serial-1"}, actions);
+    }
+
+    Companion::CompanionProtocol makeProtocolWithDeviceInfo(Companion::DeviceInfo deviceInfo,
+                                                            Companion::CompanionSystemActions* actions = nullptr) {
+        return Companion::CompanionProtocol(fs, settings, settingsStore, deviceInfo, actions);
     }
 
     std::filesystem::path root =
@@ -113,6 +151,19 @@ TEST_F(CompanionProtocolFixture, HandlesPingDeviceInfoAndCapabilities) {
     EXPECT_NE(response.find("\"protocol\":1"), std::string::npos);
     EXPECT_NE(response.find("\"transport\":\"usb_cdc\""), std::string::npos);
     EXPECT_NE(response.find("\"serial\":\"serial-1\""), std::string::npos);
+    EXPECT_NE(response.find("\"hardware_revision\":\"rev-a\""), std::string::npos);
+    EXPECT_NE(response.find("\"product_id\":\"mi23\""), std::string::npos);
+    EXPECT_NE(response.find("\"product_name\":\"MI-23\""), std::string::npos);
+    EXPECT_NE(response.find("\"device_id\":\"mi23-host-simulator\""), std::string::npos);
+    EXPECT_NE(response.find("\"firmware_version\":\"test-fw\""), std::string::npos);
+    EXPECT_NE(response.find("\"protocol_version\":1"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_schema_version\":1"), std::string::npos);
+    EXPECT_NE(response.find("\"platform\":\"host\""), std::string::npos);
+    EXPECT_NE(response.find("\"flash_size_bytes\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_offset_bytes\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_size_bytes\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_file_transfer\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_filesystem_backup\":true"), std::string::npos);
 
     EXPECT_TRUE(protocol.handleCommand("{\"id\":3,\"cmd\":\"device.capabilities\"}", response));
     EXPECT_NE(response.find("\"filesystem\":true"), std::string::npos);
@@ -122,6 +173,231 @@ TEST_F(CompanionProtocolFixture, HandlesPingDeviceInfoAndCapabilities) {
     EXPECT_NE(response.find("\"battery\":false"), std::string::npos);
     EXPECT_NE(response.find("\"screenshots\":false"), std::string::npos);
     EXPECT_NE(response.find("\"firmware_update\":false"), std::string::npos);
+}
+
+TEST_F(CompanionProtocolFixture, ReportsHostDeviceInfoFromGeneratedMetadata) {
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{});
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":10,\"cmd\":\"device.info\"}", response));
+    EXPECT_LE(response.size(), Companion::kMaxResponseLength);
+    EXPECT_NE(response.find("\"id\":10"), std::string::npos);
+    EXPECT_NE(response.find("\"product_id\":\"mi23\""), std::string::npos);
+    EXPECT_NE(response.find("\"product_name\":\"MI-23\""), std::string::npos);
+    EXPECT_NE(response.find("\"device_id\":\"mi23-host-simulator\""), std::string::npos);
+    EXPECT_NE(response.find("\"hardware_revision\":\"host-simulator\""), std::string::npos);
+    EXPECT_NE(response.find("\"firmware_version\":\"0.1.0-alpha.1\""), std::string::npos);
+    EXPECT_NE(response.find("\"protocol_version\":1"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_schema_version\":1"), std::string::npos);
+    EXPECT_NE(response.find("\"platform\":\"host\""), std::string::npos);
+    EXPECT_NE(response.find("\"supports_bootsel_reboot\":false"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_firmware_update\":false"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_file_transfer\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_filesystem_backup\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"flash_size_bytes\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_offset_bytes\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_size_bytes\":0"), std::string::npos);
+
+    EXPECT_STREQ(MI23::Metadata::kProductId, "mi23");
+    EXPECT_STREQ(MI23::Metadata::kProductName, "MI-23");
+    EXPECT_STREQ(MI23::Metadata::kFirmwareVersion, "0.1.0-alpha.1");
+    EXPECT_STREQ(MI23::Metadata::kHardwareRevision, "host-simulator");
+    EXPECT_STREQ(MI23::Metadata::kPlatform, "host");
+    EXPECT_STREQ(MI23::Metadata::kDefaultDeviceId, "mi23-host-simulator");
+    EXPECT_EQ(MI23::Metadata::kCompanionProtocolVersion, 1);
+    EXPECT_EQ(MI23::Metadata::kFilesystemSchemaVersion, 1);
+    EXPECT_EQ(MI23::Metadata::kFlashSizeBytes, 0u);
+    EXPECT_EQ(MI23::Metadata::kFilesystemOffsetBytes, 0u);
+    EXPECT_EQ(MI23::Metadata::kFilesystemSizeBytes, 0u);
+}
+
+TEST_F(CompanionProtocolFixture, GetDeviceInfoAliasReturnsDeviceInfo) {
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{});
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":11,\"cmd\":\"GET_DEVICE_INFO\"}", response));
+    EXPECT_LE(response.size(), Companion::kMaxResponseLength);
+    EXPECT_NE(response.find("\"id\":11"), std::string::npos);
+    EXPECT_NE(response.find("\"product_id\":\"mi23\""), std::string::npos);
+    EXPECT_NE(response.find("\"hardware_revision\":\"host-simulator\""), std::string::npos);
+    EXPECT_NE(response.find("\"firmware_version\":\"0.1.0-alpha.1\""), std::string::npos);
+    EXPECT_NE(response.find("\"device_id\":\"mi23-host-simulator\""), std::string::npos);
+}
+
+TEST_F(CompanionProtocolFixture, CanReportRp2350DeviceInfoMetadata) {
+    Companion::DeviceInfo deviceInfo{};
+    deviceInfo.hardwareRevision = "waveshare-rp2350-pizero";
+    deviceInfo.platform = "rp2350";
+    deviceInfo.deviceId = "mi23-0123456789ABCDEF";
+    deviceInfo.serialNumber = "mi23-0123456789ABCDEF";
+    deviceInfo.flashSizeBytes = 16777216u;
+    deviceInfo.filesystemOffsetBytes = 14680064u;
+    deviceInfo.filesystemSizeBytes = 2097152u;
+    deviceInfo.supportsBootselReboot = true;
+    deviceInfo.supportsFirmwareUpdate = true;
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(deviceInfo);
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":12,\"cmd\":\"GET_DEVICE_INFO\"}", response));
+    EXPECT_LE(response.size(), Companion::kMaxResponseLength);
+    EXPECT_NE(response.find("\"hardware_revision\":\"waveshare-rp2350-pizero\""), std::string::npos);
+    EXPECT_NE(response.find("\"platform\":\"rp2350\""), std::string::npos);
+    EXPECT_NE(response.find("\"device_id\":\"mi23-0123456789ABCDEF\""), std::string::npos);
+    EXPECT_NE(response.find("\"flash_size_bytes\":16777216"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_offset_bytes\":14680064"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_size_bytes\":2097152"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_bootsel_reboot\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_firmware_update\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_file_transfer\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"supports_filesystem_backup\":true"), std::string::npos);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderAcknowledgesAndDefersHostMock) {
+    HostCompanionSystemActions actions;
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{}, &actions);
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":20,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_LE(response.size(), Companion::kMaxResponseLength);
+    EXPECT_NE(response.find("\"id\":20"), std::string::npos);
+    EXPECT_NE(response.find("\"accepted\":true"), std::string::npos);
+    EXPECT_NE(response.find("\"mode\":\"bootsel\""), std::string::npos);
+    EXPECT_NE(response.find("\"reboot_scheduled\":true"), std::string::npos);
+    EXPECT_TRUE(actions.bootloaderPending());
+    EXPECT_FALSE(actions.bootloaderRequested());
+
+    protocol.pollSystemActions(std::numeric_limits<uint64_t>::max());
+    EXPECT_TRUE(actions.bootloaderRequested());
+    EXPECT_EQ(actions.bootloaderMockEntryCount(), 1);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderSupportsCanonicalDottedCommandName) {
+    HostCompanionSystemActions actions;
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{}, &actions);
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":21,\"cmd\":\"device.enter_bootloader\"}", response));
+    EXPECT_NE(response.find("\"accepted\":true"), std::string::npos);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderSyncsFilesystemAndSavesSettingsBeforeScheduling) {
+    const std::filesystem::path localRoot =
+        std::filesystem::temp_directory_path() / "mi23_companion_protocol_sync_test";
+    std::error_code error;
+    std::filesystem::remove_all(localRoot, error);
+
+    SyncCountingHostAxiomFSBackend localBackend{localRoot};
+    AxiomFS::FileSystem localFs{localBackend};
+    ASSERT_EQ(localFs.mount(), AxiomFS::Status::Ok);
+    ASSERT_EQ(AxiomFS::ensureDefaultLayout(localFs), AxiomFS::Status::Ok);
+
+    SettingsState localSettings{};
+    TestSettingsStore localSettingsStore{};
+    TestSystemActions actions;
+    Companion::CompanionProtocol protocol(localFs,
+                                          localSettings,
+                                          localSettingsStore,
+                                          Companion::DeviceInfo{},
+                                          &actions);
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":22,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_NE(response.find("\"accepted\":true"), std::string::npos);
+    EXPECT_EQ(localBackend.syncCount, 1);
+    EXPECT_EQ(localSettingsStore.saveCount, 1);
+    EXPECT_EQ(actions.bootloaderRequests, 1);
+
+    std::filesystem::remove_all(localRoot, error);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderRejectsFilesystemSyncFailure) {
+    const std::filesystem::path localRoot =
+        std::filesystem::temp_directory_path() / "mi23_companion_protocol_sync_failure_test";
+    std::error_code error;
+    std::filesystem::remove_all(localRoot, error);
+
+    SyncCountingHostAxiomFSBackend localBackend{localRoot};
+    localBackend.syncStatus = AxiomFS::Status::IoError;
+    AxiomFS::FileSystem localFs{localBackend};
+    ASSERT_EQ(localFs.mount(), AxiomFS::Status::Ok);
+    ASSERT_EQ(AxiomFS::ensureDefaultLayout(localFs), AxiomFS::Status::Ok);
+
+    SettingsState localSettings{};
+    TestSettingsStore localSettingsStore{};
+    TestSystemActions actions;
+    Companion::CompanionProtocol protocol(localFs,
+                                          localSettings,
+                                          localSettingsStore,
+                                          Companion::DeviceInfo{},
+                                          &actions);
+
+    std::string response;
+    EXPECT_FALSE(protocol.handleCommand("{\"id\":23,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_NE(response.find("\"code\":\"io_error\""), std::string::npos);
+    EXPECT_EQ(localBackend.syncCount, 1);
+    EXPECT_EQ(localSettingsStore.saveCount, 0);
+    EXPECT_EQ(actions.bootloaderRequests, 0);
+
+    std::filesystem::remove_all(localRoot, error);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderRejectsUnsupportedPlatformWithoutActions) {
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{});
+
+    std::string response;
+    EXPECT_FALSE(protocol.handleCommand("{\"id\":24,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_NE(response.find("\"code\":\"unsupported\""), std::string::npos);
+}
+
+TEST_F(CompanionProtocolFixture, RepeatedEnterBootloaderRequestsAreIdempotentInHostMock) {
+    HostCompanionSystemActions actions;
+    Companion::CompanionProtocol protocol = makeProtocolWithDeviceInfo(Companion::DeviceInfo{}, &actions);
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":25,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_TRUE(protocol.handleCommand("{\"id\":26,\"cmd\":\"ENTER_BOOTLOADER\"}", response));
+    EXPECT_NE(response.find("\"already_pending\":true"), std::string::npos);
+
+    protocol.pollSystemActions(std::numeric_limits<uint64_t>::max());
+    EXPECT_TRUE(actions.bootloaderRequested());
+    EXPECT_EQ(actions.bootloaderMockEntryCount(), 1);
+}
+
+TEST_F(CompanionProtocolFixture, EnterBootloaderRejectsBusyFileOperation) {
+    const std::filesystem::path localRoot =
+        std::filesystem::temp_directory_path() / "mi23_companion_protocol_busy_test";
+    std::error_code error;
+    std::filesystem::remove_all(localRoot, error);
+
+    ReentrantHostAxiomFSBackend localBackend{localRoot};
+    AxiomFS::FileSystem localFs{localBackend};
+    ASSERT_EQ(localFs.mount(), AxiomFS::Status::Ok);
+    ASSERT_EQ(AxiomFS::ensureDefaultLayout(localFs), AxiomFS::Status::Ok);
+
+    SettingsState localSettings{};
+    TestSettingsStore localSettingsStore{};
+    TestSystemActions actions;
+    Companion::CompanionProtocol protocol(localFs,
+                                          localSettings,
+                                          localSettingsStore,
+                                          Companion::DeviceInfo{},
+                                          &actions);
+
+    std::string nestedResponse;
+    localBackend.onWrite = [&]() {
+        EXPECT_FALSE(protocol.handleCommand("{\"id\":28,\"cmd\":\"ENTER_BOOTLOADER\"}", nestedResponse));
+    };
+
+    std::string response;
+    EXPECT_TRUE(protocol.handleCommand(
+        "{\"id\":27,\"cmd\":\"fs.write\",\"path\":\"/notes/reentrant.txt\",\"offset\":0,"
+        "\"data_b64\":\"QQ==\",\"truncate\":true}",
+        response));
+    EXPECT_NE(nestedResponse.find("\"id\":28"), std::string::npos);
+    EXPECT_NE(nestedResponse.find("\"code\":\"busy\""), std::string::npos);
+    EXPECT_EQ(actions.bootloaderRequests, 0);
+
+    std::filesystem::remove_all(localRoot, error);
 }
 
 TEST_F(CompanionProtocolFixture, RejectsMalformedRequestsWithStructuredErrors) {
@@ -137,6 +413,14 @@ TEST_F(CompanionProtocolFixture, RejectsMalformedRequestsWithStructuredErrors) {
     EXPECT_FALSE(protocol.handleCommand("{\"id\":7,\"cmd\":\"nope\"}", response));
     EXPECT_NE(response.find("\"id\":7"), std::string::npos);
     EXPECT_NE(response.find("\"code\":\"unknown_command\""), std::string::npos);
+
+    EXPECT_FALSE(protocol.handleCommand("{\"id\":8,\"cmd\":\"GET_DEVICE_INFO\"", response));
+    EXPECT_NE(response.find("\"id\":0"), std::string::npos);
+    EXPECT_NE(response.find("\"code\":\"bad_json\""), std::string::npos);
+
+    EXPECT_FALSE(protocol.handleCommand("{\"id\":9,\"cmd\":123}", response));
+    EXPECT_NE(response.find("\"id\":9"), std::string::npos);
+    EXPECT_NE(response.find("\"code\":\"missing_cmd\""), std::string::npos);
 }
 
 TEST_F(CompanionProtocolFixture, ListsReadsWritesAndDeletesFiles) {

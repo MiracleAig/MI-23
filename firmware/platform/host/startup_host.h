@@ -3,6 +3,7 @@
 #include "app/boot/boot_manager.h"
 #include "hal/keypad.h"
 #include "hal/fs/axiom_fs.h"
+#include "mi23_metadata.h"
 #include "platform/host/axiom_fs_host.h"
 #include "platform/host/settings_store_host.h"
 
@@ -12,7 +13,7 @@ class HostStartupBackend : public StartupBackend {
 public:
     HostStartupBackend(Keypad& keypad,
                        HostSettingsStore& settingsStore,
-                       const char* firmwareVersion = "Firmware: dev");
+                       const char* firmwareVersion = MI23::Metadata::kFirmwareVersionLabel);
 
     const char* platformName() const override;
     const char* firmwareVersion() const override;

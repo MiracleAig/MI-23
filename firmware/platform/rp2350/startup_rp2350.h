@@ -3,18 +3,15 @@
 #include "app/boot/boot_manager.h"
 #include "hal/fs/axiom_fs.h"
 #include "hal/keypad.h"
+#include "mi23_metadata.h"
 #include "platform/rp2350/axiom_fs_rp2350.h"
 #include "platform/rp2350/settings_store_rp2350.h"
-
-#ifndef MI23_FIRMWARE_VERSION
-#define MI23_FIRMWARE_VERSION "dev"
-#endif
 
 class RP2350StartupBackend : public StartupBackend {
 public:
     RP2350StartupBackend(Keypad& keypad,
                          RP2350SettingsStore& settingsStore,
-                         const char* firmwareVersion = "Firmware: " MI23_FIRMWARE_VERSION);
+                         const char* firmwareVersion = MI23::Metadata::kFirmwareVersionLabel);
 
     const char* platformName() const override;
     const char* firmwareVersion() const override;

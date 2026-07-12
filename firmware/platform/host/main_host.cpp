@@ -3,6 +3,7 @@
 //
 
 #include "platform/host/display_sdl.h"
+#include "platform/host/companion_system_actions_host.h"
 #include "platform/host/keypad_host.h"
 #include "platform/host/simulator_keypad.h"
 #include "platform/host/settings_store_host.h"
@@ -19,18 +20,11 @@
 #include "app/ui/title_bar.h"
 #include "core/companion/CompanionProtocol.h"
 #include "hal/system_time.h"
+#include "mi23_metadata.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 
 namespace {
-
-#ifndef MI23_FIRMWARE_VERSION
-#define MI23_FIRMWARE_VERSION "dev"
-#endif
-
-#ifndef MI23_HARDWARE_REVISION
-#define MI23_HARDWARE_REVISION "simulator"
-#endif
 
 CalculatorAppConfig hostCalculatorConfig(const SettingsState& settings, AxiomFS::FileSystem* filesystem) {
     CalculatorAppConfig config;
@@ -59,10 +53,12 @@ public:
         , m_graph(&m_settings, &m_startup.filesystem())
         , m_settingsApp(display, m_settings, "Simulator", &m_startup.filesystem())
         , m_companionTransport()
+        , m_companionSystemActions()
         , m_companionProtocol(m_startup.filesystem(),
                               m_settings,
                               m_settingsStore,
-                              {MI23_FIRMWARE_VERSION, MI23_HARDWARE_REVISION})
+                              Companion::DeviceInfo{},
+                              &m_companionSystemActions)
         , m_companionSession(m_companionTransport, m_companionProtocol)
         , m_companionLink(display, m_companionSession)
         , m_activeApp(AppId::Boot)
@@ -199,6 +195,7 @@ private:
     GraphApp m_graph;
     SettingsApp m_settingsApp;
     HostUsbCdcTransport m_companionTransport;
+    HostCompanionSystemActions m_companionSystemActions;
     Companion::CompanionProtocol m_companionProtocol;
     Companion::CompanionSession m_companionSession;
     CompanionLinkApp m_companionLink;

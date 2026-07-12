@@ -19,7 +19,6 @@ namespace Companion {
 
 namespace {
 
-constexpr int kProtocolVersion = 1;
 constexpr const char* kFormatConfirmation = "FORMAT_MI23_STORAGE";
 
 void logCompanion(const char* format, ...) {
@@ -110,6 +109,36 @@ bool getBoolField(const JsonValue& object, const char* key, bool& out, bool defa
     out = value->boolValue();
     return true;
 }
+
+const char* stringOrFallback(const char* value, const char* fallback) {
+    return value ? value : fallback;
+}
+
+int positiveOrFallback(int value, int fallback) {
+    return value > 0 ? value : fallback;
+}
+
+uint32_t nonZeroOrFallback(uint32_t value, uint32_t fallback) {
+    return value != 0u ? value : fallback;
+}
+
+class OperationGuard {
+public:
+    OperationGuard(CompanionProtocol::ActiveOperation& slot,
+                   CompanionProtocol::ActiveOperation operation)
+        : m_slot(slot)
+        , m_previous(slot) {
+        m_slot = operation;
+    }
+
+    ~OperationGuard() {
+        m_slot = m_previous;
+    }
+
+private:
+    CompanionProtocol::ActiveOperation& m_slot;
+    CompanionProtocol::ActiveOperation m_previous;
+};
 
 std::string parentPath(const std::string& filesystemPath) {
     const std::size_t slash = filesystemPath.rfind('/');
@@ -263,7 +292,8 @@ CompanionProtocol::CompanionProtocol(AxiomFS::FileSystem& filesystem,
     , m_settings(settings)
     , m_settingsStore(settingsStore)
     , m_deviceInfo(deviceInfo)
-    , m_systemActions(systemActions) {}
+    , m_systemActions(systemActions)
+    , m_activeOperation(ActiveOperation::None) {}
 
 bool CompanionProtocol::handleCommand(const std::string& request, std::string& response) {
     response.clear();
@@ -305,8 +335,11 @@ bool CompanionProtocol::dispatch(int64_t id,
     if (command == "protocol.ping") {
         return handlePing(id, response);
     }
-    if (command == "device.info") {
+    if (command == "device.info" || command == "GET_DEVICE_INFO") {
         return handleDeviceInfo(id, response);
+    }
+    if (isBootloaderCommand(command)) {
+        return handleEnterBootloader(id, request, response);
     }
     if (command == "device.capabilities") {
         return handleCapabilities(id, response);
@@ -353,18 +386,115 @@ bool CompanionProtocol::handlePing(int64_t id, std::string& response) const {
 }
 
 bool CompanionProtocol::handleDeviceInfo(int64_t id, std::string& response) const {
+    const char* productId = stringOrFallback(m_deviceInfo.productId, MI23::Metadata::kProductId);
+    const char* productName = stringOrFallback(m_deviceInfo.productName, MI23::Metadata::kProductName);
+    const char* firmwareVersion = stringOrFallback(m_deviceInfo.firmwareVersion, MI23::Metadata::kFirmwareVersion);
+    const char* hardwareRevision = stringOrFallback(m_deviceInfo.hardwareRevision, MI23::Metadata::kHardwareRevision);
+    const char* platform = stringOrFallback(m_deviceInfo.platform, MI23::Metadata::kPlatform);
+    const char* deviceId = stringOrFallback(m_deviceInfo.deviceId, MI23::Metadata::kDefaultDeviceId);
+    const char* serialNumber = stringOrFallback(m_deviceInfo.serialNumber, deviceId);
+    const int protocolVersion = positiveOrFallback(m_deviceInfo.protocolVersion,
+                                                   MI23::Metadata::kCompanionProtocolVersion);
+    const int filesystemSchemaVersion = positiveOrFallback(m_deviceInfo.filesystemSchemaVersion,
+                                                           MI23::Metadata::kFilesystemSchemaVersion);
+    const uint32_t flashSizeBytes = nonZeroOrFallback(m_deviceInfo.flashSizeBytes,
+                                                      MI23::Metadata::kFlashSizeBytes);
+    const uint32_t filesystemOffsetBytes = nonZeroOrFallback(m_deviceInfo.filesystemOffsetBytes,
+                                                             MI23::Metadata::kFilesystemOffsetBytes);
+    const uint32_t filesystemSizeBytes = nonZeroOrFallback(m_deviceInfo.filesystemSizeBytes,
+                                                           MI23::Metadata::kFilesystemSizeBytes);
+
     std::string result = "{";
-    result += "\"model\":\"MI-23\",";
-    result += "\"name\":\"MI-23\",";
-    result += "\"firmware\":";
-    appendJsonString(result, m_deviceInfo.firmwareVersion ? m_deviceInfo.firmwareVersion : "dev");
+    result += "\"model\":";
+    appendJsonString(result, productName);
+    result += ",\"name\":";
+    appendJsonString(result, productName);
+    result += ",\"firmware\":";
+    appendJsonString(result, firmwareVersion);
     result += ",\"protocol\":";
-    result += std::to_string(kProtocolVersion);
+    result += std::to_string(protocolVersion);
     result += ",\"transport\":\"usb_cdc\",";
     result += "\"serial\":";
-    appendJsonString(result, m_deviceInfo.serialNumber ? m_deviceInfo.serialNumber : "");
+    appendJsonString(result, serialNumber);
     result += ",\"hardware_revision\":";
-    appendJsonString(result, m_deviceInfo.hardwareRevision ? m_deviceInfo.hardwareRevision : "unknown");
+    appendJsonString(result, hardwareRevision);
+    result += ",\"product_id\":";
+    appendJsonString(result, productId);
+    result += ",\"product_name\":";
+    appendJsonString(result, productName);
+    result += ",\"device_id\":";
+    appendJsonString(result, deviceId);
+    result += ",\"firmware_version\":";
+    appendJsonString(result, firmwareVersion);
+    result += ",\"protocol_version\":";
+    result += std::to_string(protocolVersion);
+    result += ",\"filesystem_schema_version\":";
+    result += std::to_string(filesystemSchemaVersion);
+    result += ",\"platform\":";
+    appendJsonString(result, platform);
+    result += ",\"flash_size_bytes\":";
+    result += std::to_string(flashSizeBytes);
+    result += ",\"filesystem_offset_bytes\":";
+    result += std::to_string(filesystemOffsetBytes);
+    result += ",\"filesystem_size_bytes\":";
+    result += std::to_string(filesystemSizeBytes);
+    result += ",\"supports_bootsel_reboot\":";
+    result += m_deviceInfo.supportsBootselReboot ? "true" : "false";
+    result += ",\"supports_firmware_update\":";
+    result += m_deviceInfo.supportsFirmwareUpdate ? "true" : "false";
+    result += ",\"supports_file_transfer\":";
+    result += m_deviceInfo.supportsFileTransfer ? "true" : "false";
+    result += ",\"supports_filesystem_backup\":";
+    result += m_deviceInfo.supportsFilesystemBackup ? "true" : "false";
+    result += "}";
+    return respondOk(id, result, response);
+}
+
+bool CompanionProtocol::handleEnterBootloader(int64_t id,
+                                              const JsonValue& request,
+                                              std::string& response) {
+    (void)request;
+
+    if (!isBootloaderSafeState()) {
+        std::string message = "Cannot enter BOOTSEL while ";
+        message += activeOperationName();
+        message += " is active";
+        return respondError(id, "busy", message, response);
+    }
+
+    if (!m_systemActions) {
+        return respondError(id,
+                            "unsupported",
+                            "BOOTSEL reboot is not supported on this platform.",
+                            response);
+    }
+
+    const AxiomFS::Status syncStatus = m_filesystem.sync();
+    if (syncStatus != AxiomFS::Status::Ok) {
+        return respondFsError(id, syncStatus, "Filesystem sync before BOOTSEL failed", response);
+    }
+
+    if (!m_settingsStore.save(m_settings)) {
+        return respondError(id,
+                            "io_error",
+                            "Failed to persist settings before BOOTSEL reboot",
+                            response);
+    }
+
+    const SystemActionResult action = m_systemActions->requestBootloader();
+    if (!action.accepted) {
+        return respondError(id,
+                            action.effectiveErrorCode(),
+                            action.errorMessage.empty()
+                                ? "BOOTSEL reboot is not supported on this platform."
+                                : action.errorMessage,
+                            response);
+    }
+
+    std::string result = "{\"accepted\":true,\"mode\":\"bootsel\",\"reboot_scheduled\":true";
+    if (action.alreadyPending) {
+        result += ",\"already_pending\":true";
+    }
     result += "}";
     return respondOk(id, result, response);
 }
@@ -425,6 +555,7 @@ bool CompanionProtocol::handleStorageInfo(int64_t id, std::string& response) {
 }
 
 bool CompanionProtocol::handleFsList(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::FileList);
     if (!ensureFilesystemReady(id, response)) {
         return false;
     }
@@ -473,6 +604,7 @@ bool CompanionProtocol::handleFsList(int64_t id, const JsonValue& request, std::
 }
 
 bool CompanionProtocol::handleFsRead(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::FileRead);
     if (!ensureFilesystemReady(id, response)) {
         return false;
     }
@@ -519,6 +651,7 @@ bool CompanionProtocol::handleFsRead(int64_t id, const JsonValue& request, std::
 }
 
 bool CompanionProtocol::handleFsWrite(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::FileWrite);
     if (!ensureFilesystemReady(id, response)) {
         return false;
     }
@@ -597,6 +730,7 @@ bool CompanionProtocol::handleFsWrite(int64_t id, const JsonValue& request, std:
 }
 
 bool CompanionProtocol::handleFsDelete(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::FileDelete);
     if (!ensureFilesystemReady(id, response)) {
         return false;
     }
@@ -615,6 +749,7 @@ bool CompanionProtocol::handleFsDelete(int64_t id, const JsonValue& request, std
 }
 
 bool CompanionProtocol::handleFsMkdir(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::FileMkdir);
     if (!ensureFilesystemReady(id, response)) {
         return false;
     }
@@ -645,6 +780,7 @@ bool CompanionProtocol::handleFsMkdir(int64_t id, const JsonValue& request, std:
 }
 
 bool CompanionProtocol::handleStorageFormat(int64_t id, const JsonValue& request, std::string& response) {
+    OperationGuard operation(m_activeOperation, ActiveOperation::StorageFormat);
     std::string confirm;
     if (!getStringField(request, "confirm", confirm) || confirm != kFormatConfirmation) {
         return respondError(id, "invalid_argument", "storage.format requires the exact confirmation string", response);
@@ -739,9 +875,13 @@ bool CompanionProtocol::handleTerminalExec(int64_t id, const JsonValue& request,
     if (line == "help") {
         output = "available commands: help, info, storage, capabilities, uptime, version, reboot, bootloader\n";
     } else if (line == "info") {
-        output = "MI-23 firmware ";
-        output += m_deviceInfo.firmwareVersion ? m_deviceInfo.firmwareVersion : "dev";
-        output += " protocol 1\n";
+        output = stringOrFallback(m_deviceInfo.productName, MI23::Metadata::kProductName);
+        output += " firmware ";
+        output += stringOrFallback(m_deviceInfo.firmwareVersion, MI23::Metadata::kFirmwareVersion);
+        output += " protocol ";
+        output += std::to_string(positiveOrFallback(m_deviceInfo.protocolVersion,
+                                                    MI23::Metadata::kCompanionProtocolVersion));
+        output += "\n";
     } else if (line == "storage") {
         AxiomFS::Diagnostics diagnostics = m_filesystem.getDiagnostics();
         output = "storage mounted=";
@@ -762,7 +902,7 @@ bool CompanionProtocol::handleTerminalExec(int64_t id, const JsonValue& request,
         output += std::to_string(systemTimeMs());
         output += "\n";
     } else if (line == "version") {
-        output = m_deviceInfo.firmwareVersion ? m_deviceInfo.firmwareVersion : "dev";
+        output = stringOrFallback(m_deviceInfo.firmwareVersion, MI23::Metadata::kFirmwareVersion);
         output += "\n";
     } else if (line == "reboot") {
         if (!m_systemActions) {
@@ -774,7 +914,7 @@ bool CompanionProtocol::handleTerminalExec(int64_t id, const JsonValue& request,
         const SystemActionResult action = m_systemActions->requestReboot();
         if (!action.accepted) {
             return respondError(id,
-                                "unsupported",
+                                action.effectiveErrorCode(),
                                 action.errorMessage.empty()
                                     ? "Reboot is not supported on this platform."
                                     : action.errorMessage,
@@ -791,7 +931,7 @@ bool CompanionProtocol::handleTerminalExec(int64_t id, const JsonValue& request,
         const SystemActionResult action = m_systemActions->requestBootloader();
         if (!action.accepted) {
             return respondError(id,
-                                "unsupported",
+                                action.effectiveErrorCode(),
                                 action.errorMessage.empty()
                                     ? "USB BOOT mode is not supported on this platform."
                                     : action.errorMessage,
@@ -935,6 +1075,35 @@ bool CompanionProtocol::respondFsError(int64_t id,
                                        std::string& response) const {
     const char* code = statusErrorCode(status, m_filesystem.lastMountFailureReason());
     return respondError(id, code, statusMessage(status, context), response);
+}
+
+bool CompanionProtocol::isBootloaderSafeState() const {
+    return m_activeOperation == ActiveOperation::None;
+}
+
+bool CompanionProtocol::isBootloaderCommand(const std::string& command) const {
+    return command == "device.enter_bootloader" || command == "ENTER_BOOTLOADER";
+}
+
+const char* CompanionProtocol::activeOperationName() const {
+    switch (m_activeOperation) {
+        case ActiveOperation::None:
+            return "no operation";
+        case ActiveOperation::FileList:
+            return "filesystem listing";
+        case ActiveOperation::FileRead:
+            return "file download";
+        case ActiveOperation::FileWrite:
+            return "file upload";
+        case ActiveOperation::FileDelete:
+            return "file deletion";
+        case ActiveOperation::FileMkdir:
+            return "directory creation";
+        case ActiveOperation::StorageFormat:
+            return "storage format";
+        default:
+            return "another operation";
+    }
 }
 
 } // namespace Companion

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hardware/flash.h"
+#include "mi23_metadata.h"
 #include "pico/stdlib.h"
 
 #include <cstdint>
@@ -36,5 +37,11 @@ static_assert(PICO_FLASH_SIZE_BYTES == kExpectedFlashSize,
               "RP2350 AxiomFS layout expects 16 MiB external flash");
 static_assert(PICO_FLASH_SIZE_BYTES > kLittleFsSize + kSettingsSectorSize,
               "Flash layout needs room for firmware, settings, and LittleFS");
+static_assert(MI23::Metadata::kFlashSizeBytes == kExpectedFlashSize,
+              "RP2350 metadata flash size must match the flash layout");
+static_assert(MI23::Metadata::kFilesystemOffsetBytes == kLittleFsOffset,
+              "RP2350 metadata filesystem offset must match the flash layout");
+static_assert(MI23::Metadata::kFilesystemSizeBytes == kLittleFsSize,
+              "RP2350 metadata filesystem size must match the flash layout");
 
 } // namespace RP2350FlashLayout

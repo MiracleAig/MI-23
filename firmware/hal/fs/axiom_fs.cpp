@@ -99,6 +99,10 @@ AxiomFS::Status Backend::unmount() {
     return Status::Unsupported;
 }
 
+AxiomFS::Status Backend::sync() {
+    return Status::Ok;
+}
+
 bool Backend::isMounted() const {
     return false;
 }
@@ -160,6 +164,10 @@ Status FileSystem::mount() {
 
 Status FileSystem::unmount() {
     return m_backend.unmount();
+}
+
+Status FileSystem::sync() {
+    return m_backend.sync();
 }
 
 Status FileSystem::remount() {

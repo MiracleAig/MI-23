@@ -1,6 +1,12 @@
 add_library(firmware_headers INTERFACE)
+configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/mi23_metadata.h.in
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/mi23_metadata.h
+        @ONLY
+)
 target_include_directories(firmware_headers INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 add_subdirectory(math)

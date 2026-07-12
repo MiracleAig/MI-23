@@ -106,6 +106,7 @@ public:
 
     virtual Status mount() = 0;
     virtual Status unmount();
+    virtual Status sync();
     virtual Status format() = 0;
     virtual Status exists(const std::string& path, bool& outExists) = 0;
     virtual ReadResult readFile(const std::string& path) = 0;
@@ -133,6 +134,7 @@ public:
 
     Status mount();
     Status unmount();
+    Status sync();
     Status remount();
     Status format();
     Status exists(const std::string& path, bool& outExists);
