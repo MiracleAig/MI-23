@@ -12,6 +12,16 @@ namespace {
 
 constexpr uint32_t kSettingsPageSize = FLASH_PAGE_SIZE;
 
+bool settingsRangeIsValid() {
+    const uint32_t detectedSize =
+        flash_devinfo_size_to_bytes(flash_devinfo_get_cs_size(0));
+    const uint32_t flashSize = detectedSize != 0u ? detectedSize : PICO_FLASH_SIZE_BYTES;
+    const uint64_t settingsEnd =
+        static_cast<uint64_t>(RP2350FlashLayout::kSettingsSectorOffset)
+        + RP2350FlashLayout::kSettingsSectorSize;
+    return settingsEnd <= flashSize;
+}
+
 const uint8_t* flashAddress() {
     return reinterpret_cast<const uint8_t*>(XIP_BASE + RP2350FlashLayout::kSettingsSectorOffset);
 }
@@ -20,6 +30,13 @@ const uint8_t* flashAddress() {
 
 bool RP2350SettingsStore::load(SettingsState& settings) {
     settings.resetToDefaults();
+
+    // Loading settings happens before the broader storage-layout check during
+    // boot. Never dereference an XIP address until it is known to be inside the
+    // physical flash reported by the RP2350 boot ROM.
+    if (!settingsRangeIsValid()) {
+        return false;
+    }
 
     std::array<uint8_t, SettingsStore::kSerializedSize> buffer{};
     std::memcpy(buffer.data(), flashAddress(), buffer.size());
@@ -32,6 +49,10 @@ bool RP2350SettingsStore::load(SettingsState& settings) {
 }
 
 bool RP2350SettingsStore::save(const SettingsState& settings) {
+    if (!settingsRangeIsValid()) {
+        return false;
+    }
+
     std::array<uint8_t, RP2350FlashLayout::kSettingsSectorSize> sectorBuffer{};
     sectorBuffer.fill(0xFFu);
 

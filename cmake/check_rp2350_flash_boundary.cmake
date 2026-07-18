@@ -48,7 +48,8 @@ endforeach()
 if(max_flash_end GREATER MI23_FLASH_BOUNDARY)
     message(FATAL_ERROR
             "RP2350 firmware image ends at flash offset ${max_flash_end}, "
-            "which overlaps the LittleFS region starting at ${MI23_FLASH_BOUNDARY}.")
+            "which overlaps reserved settings/filesystem storage starting at ${MI23_FLASH_BOUNDARY}.")
 endif()
 
-message(STATUS "RP2350 firmware flash end ${max_flash_end} is below LittleFS offset ${MI23_FLASH_BOUNDARY}")
+message(STATUS
+        "RP2350 firmware flash end ${max_flash_end} is below reserved storage boundary ${MI23_FLASH_BOUNDARY}")

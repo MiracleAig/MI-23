@@ -230,8 +230,8 @@ TEST_F(CompanionProtocolFixture, CanReportRp2350DeviceInfoMetadata) {
     deviceInfo.platform = "rp2350";
     deviceInfo.deviceId = "mi23-0123456789ABCDEF";
     deviceInfo.serialNumber = "mi23-0123456789ABCDEF";
-    deviceInfo.flashSizeBytes = 16777216u;
-    deviceInfo.filesystemOffsetBytes = 14680064u;
+    deviceInfo.flashSizeBytes = 4194304u;
+    deviceInfo.filesystemOffsetBytes = 2097152u;
     deviceInfo.filesystemSizeBytes = 2097152u;
     deviceInfo.supportsBootselReboot = true;
     deviceInfo.supportsFirmwareUpdate = true;
@@ -243,8 +243,8 @@ TEST_F(CompanionProtocolFixture, CanReportRp2350DeviceInfoMetadata) {
     EXPECT_NE(response.find("\"hardware_revision\":\"waveshare-rp2350-pizero\""), std::string::npos);
     EXPECT_NE(response.find("\"platform\":\"rp2350\""), std::string::npos);
     EXPECT_NE(response.find("\"device_id\":\"mi23-0123456789ABCDEF\""), std::string::npos);
-    EXPECT_NE(response.find("\"flash_size_bytes\":16777216"), std::string::npos);
-    EXPECT_NE(response.find("\"filesystem_offset_bytes\":14680064"), std::string::npos);
+    EXPECT_NE(response.find("\"flash_size_bytes\":4194304"), std::string::npos);
+    EXPECT_NE(response.find("\"filesystem_offset_bytes\":2097152"), std::string::npos);
     EXPECT_NE(response.find("\"filesystem_size_bytes\":2097152"), std::string::npos);
     EXPECT_NE(response.find("\"supports_bootsel_reboot\":true"), std::string::npos);
     EXPECT_NE(response.find("\"supports_firmware_update\":true"), std::string::npos);

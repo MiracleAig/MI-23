@@ -71,7 +71,7 @@ Equivalent alias:
 Expected RP2350 response fields include:
 
 ```json
-{"id":1,"ok":true,"result":{"model":"MI-23","name":"MI-23","firmware":"0.1.0-alpha.1","protocol":1,"transport":"usb_cdc","serial":"mi23-0123456789ABCDEF","hardware_revision":"waveshare-rp2350-pizero","product_id":"mi23","product_name":"MI-23","device_id":"mi23-0123456789ABCDEF","firmware_version":"0.1.0-alpha.1","protocol_version":1,"filesystem_schema_version":1,"platform":"rp2350","flash_size_bytes":16777216,"filesystem_offset_bytes":14680064,"filesystem_size_bytes":2097152,"supports_bootsel_reboot":true,"supports_firmware_update":true,"supports_file_transfer":true,"supports_filesystem_backup":true}}
+{"id":1,"ok":true,"result":{"model":"MI-23","name":"MI-23","firmware":"0.1.0-alpha.1","protocol":1,"transport":"usb_cdc","serial":"mi23-0123456789ABCDEF","hardware_revision":"waveshare-rp2350-pizero","product_id":"mi23","product_name":"MI-23","device_id":"mi23-0123456789ABCDEF","firmware_version":"0.1.0-alpha.1","protocol_version":1,"filesystem_schema_version":1,"platform":"rp2350","flash_size_bytes":4194304,"filesystem_offset_bytes":2097152,"filesystem_size_bytes":2097152,"supports_bootsel_reboot":true,"supports_firmware_update":true,"supports_file_transfer":true,"supports_filesystem_backup":true}}
 ```
 
 The legacy `model`, `name`, `firmware`, and `protocol` fields remain for
@@ -116,8 +116,8 @@ Capability fields:
 Flash geometry fields are reported so the companion can avoid installing a
 firmware image that would overwrite user storage:
 
-- `flash_size_bytes`: `16777216` on the Waveshare RP2350-PiZero target.
-- `filesystem_offset_bytes`: `14680064` (`0x00E00000`) on RP2350.
+- `flash_size_bytes`: `4194304` on the Waveshare RP2350-PiZero target.
+- `filesystem_offset_bytes`: `2097152` (`0x00200000`) on RP2350.
 - `filesystem_size_bytes`: `2097152` on RP2350.
 
 The public firmware server is:
@@ -179,8 +179,9 @@ Success acknowledgement:
 ```
 
 After sending the acknowledgement, RP2350 firmware defers the reset briefly so
-the USB CDC response can leave the device, flushes stdio, deinitializes normal
-USB stdio, and reboots into BOOTSEL using the Pico SDK boot ROM reboot path.
+the USB CDC response can leave the device, flushes stdio, and calls the Pico SDK
+boot ROM BOOTSEL reset path. That no-return reset tears down the normal USB CDC
+interface and enables both the mass-storage and Picoboot bootloader interfaces.
 The companion should expect the CDC serial connection to disconnect and the
 RP2350 BOOTSEL device to enumerate.
 
@@ -349,8 +350,8 @@ The current metadata knobs are:
 - `MI23_HARDWARE_REVISION` default `waveshare-rp2350-pizero` on RP2350 and `host-simulator` on host
 - `MI23_COMPANION_PROTOCOL_VERSION` default `1`
 - `MI23_FILESYSTEM_SCHEMA_VERSION` default `1`
-- `MI23_FLASH_SIZE_BYTES` default `16777216` on RP2350
-- `MI23_FILESYSTEM_OFFSET_BYTES` default `14680064` on RP2350
+- `MI23_FLASH_SIZE_BYTES` default `4194304` on RP2350
+- `MI23_FILESYSTEM_OFFSET_BYTES` default `2097152` on RP2350
 - `MI23_FILESYSTEM_SIZE_BYTES` default `2097152` on RP2350
 
 Increment `MI23_FILESYSTEM_SCHEMA_VERSION` only when persisted filesystem data
@@ -371,20 +372,21 @@ and keep the companion protocol fields unchanged.
 
 ## LittleFS Boundary Protection
 
-The Waveshare RP2350-PiZero build reserves the final 2 MiB of the 16 MiB flash
+The Waveshare RP2350-PiZero build reserves the final 2 MiB of its 4 MiB flash
 for AxiomFS/LittleFS:
 
 ```text
-flash_size_bytes              = 16777216
-filesystem_offset_bytes       = 14680064 / 0x00E00000
+flash_size_bytes              = 4194304
+filesystem_offset_bytes       = 2097152 / 0x00200000
 filesystem_size_bytes         = 2097152
 ```
 
-RP2350 flash-layout constants statically assert this geometry, and the RP2350
-CMake build runs a post-link ELF section check. If any linked flash section
-would extend to or past `0x00E00000`, the build fails before UF2 output is
-accepted. Firmware update flows must preserve bytes from `0x00E00000` through
-the end of flash.
+The settings sector occupies `0x001FF000` through `0x001FFFFF`, immediately
+before LittleFS. RP2350 flash-layout constants statically assert this geometry,
+and the RP2350 CMake build runs a post-link ELF section check. If any linked
+flash section would extend to or past `0x001FF000`, the build fails before UF2
+output is accepted. Firmware update flows must preserve bytes from `0x001FF000`
+through the end of flash.
 
 ## Manual BOOTSEL Recovery
 

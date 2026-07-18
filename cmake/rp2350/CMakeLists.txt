@@ -117,11 +117,13 @@ endif()
 
 pico_add_extra_outputs(mi23)
 
+math(EXPR MI23_RP2350_FIRMWARE_FLASH_BOUNDARY
+        "${MI23_FILESYSTEM_OFFSET_BYTES} - 4096")
 add_custom_command(TARGET mi23 POST_BUILD
         COMMAND ${CMAKE_COMMAND}
                 -DMI23_ELF=$<TARGET_FILE:mi23>
                 -DMI23_OBJDUMP=${CMAKE_OBJDUMP}
-                -DMI23_FLASH_BOUNDARY=${MI23_FILESYSTEM_OFFSET_BYTES}
+                -DMI23_FLASH_BOUNDARY=${MI23_RP2350_FIRMWARE_FLASH_BOUNDARY}
                 -P ${PROJECT_SOURCE_DIR}/cmake/check_rp2350_flash_boundary.cmake
         COMMENT "Checking RP2350 firmware image stays below LittleFS flash boundary"
 )

@@ -8,10 +8,9 @@
 
 namespace RP2350FlashLayout {
 
-constexpr uint32_t kExpectedFlashSize = 16u * 1024u * 1024u;
+constexpr uint32_t kExpectedFlashSize = 4u * 1024u * 1024u;
 
-// Development layout for the Waveshare RP2350-PiZero board variant with
-// 16 MiB external flash:
+// Development layout for the Waveshare RP2350-PiZero board's 4 MiB flash:
 // reserve the last 2 MiB for LittleFS. Pico firmware is linked from the bottom
 // of flash, so this end-of-flash region avoids normal code/data growth. This is
 // board-specific; final hardware should move this into a linker-enforced flash
@@ -33,8 +32,10 @@ static_assert(kLittleFsOffset % FLASH_SECTOR_SIZE == 0u, "LittleFS offset must b
 static_assert(kLittleFsSize % FLASH_SECTOR_SIZE == 0u, "LittleFS size must be sector aligned");
 static_assert(kLittleFsProgramSize == FLASH_PAGE_SIZE, "Flash writes must be page sized");
 static_assert(kSettingsSectorOffset % FLASH_SECTOR_SIZE == 0u, "Settings offset must be sector aligned");
+static_assert(kSettingsSectorOffset + kSettingsSectorSize <= kExpectedFlashSize,
+              "Settings sector must fit within physical flash");
 static_assert(PICO_FLASH_SIZE_BYTES == kExpectedFlashSize,
-              "RP2350 AxiomFS layout expects 16 MiB external flash");
+              "RP2350 AxiomFS layout expects 4 MiB external flash");
 static_assert(PICO_FLASH_SIZE_BYTES > kLittleFsSize + kSettingsSectorSize,
               "Flash layout needs room for firmware, settings, and LittleFS");
 static_assert(MI23::Metadata::kFlashSizeBytes == kExpectedFlashSize,
