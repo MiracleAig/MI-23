@@ -1,6 +1,7 @@
 #include "app/graphing/graph_storage.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -139,29 +140,26 @@ bool parseDoubleField(const std::string& text,
 bool parseWindow(const std::string& text, GraphWindow& window) {
     std::size_t windowStart = 0;
     if (!findKeyValueStart(text, "window", 0, text.size(), windowStart) || text[windowStart] != '{') {
-        window = DEFAULT_GRAPH_WINDOW;
-        return true;
+        return false;
     }
     const std::size_t windowEnd = text.find('}', windowStart + 1);
     if (windowEnd == std::string::npos) {
         return false;
     }
 
-    window = DEFAULT_GRAPH_WINDOW;
-    (void)parseDoubleField(text, "xMin", windowStart, windowEnd, window.xMin);
-    (void)parseDoubleField(text, "xMax", windowStart, windowEnd, window.xMax);
-    (void)parseDoubleField(text, "yMin", windowStart, windowEnd, window.yMin);
-    (void)parseDoubleField(text, "yMax", windowStart, windowEnd, window.yMax);
-    if (window.xMax <= window.xMin || window.yMax <= window.yMin) {
-        window = DEFAULT_GRAPH_WINDOW;
-    }
-    return true;
+    return parseDoubleField(text, "xMin", windowStart, windowEnd, window.xMin) &&
+           parseDoubleField(text, "xMax", windowStart, windowEnd, window.xMax) &&
+           parseDoubleField(text, "yMin", windowStart, windowEnd, window.yMin) &&
+           parseDoubleField(text, "yMax", windowStart, windowEnd, window.yMax) &&
+           std::isfinite(window.xMin) && std::isfinite(window.xMax) &&
+           std::isfinite(window.yMin) && std::isfinite(window.yMax) &&
+           window.xMin < window.xMax && window.yMin < window.yMax;
 }
 
 bool parseFunctions(const std::string& text, std::vector<GraphSessionFunction>& functions) {
     std::size_t arrayStart = 0;
     if (!findKeyValueStart(text, "functions", 0, text.size(), arrayStart) || text[arrayStart] != '[') {
-        return true;
+        return false;
     }
     const std::size_t arrayEnd = text.find(']', arrayStart + 1);
     if (arrayEnd == std::string::npos) {
@@ -180,10 +178,12 @@ bool parseFunctions(const std::string& text, std::vector<GraphSessionFunction>& 
         }
 
         GraphSessionFunction function;
-        if (parseStringField(text, "expression", objectStart, objectEnd, function.expression)) {
-            (void)parseBoolField(text, "enabled", objectStart, objectEnd, function.enabled);
-            functions.push_back(function);
+        if (!parseStringField(text, "expression", objectStart, objectEnd, function.expression) ||
+            !parseBoolField(text, "enabled", objectStart, objectEnd, function.enabled) ||
+            function.expression.size() > 256 || functions.size() >= 16) {
+            return false;
         }
+        functions.push_back(function);
         pos = objectEnd + 1;
     }
     return true;
@@ -331,14 +331,20 @@ bool GraphSessionStorage::load(AxiomFS::FileSystem& fs,
     }
 
     const std::string text(read.data.begin(), read.data.end());
-    if (text.find('{') == std::string::npos || text.find("\"version\"") == std::string::npos) {
+    double version = 0;
+    if (text.find('{') == std::string::npos ||
+        !parseDoubleField(text, "version", 0, text.size(), version) ||
+        version != 1.0) {
         return false;
     }
 
     GraphSessionData parsed;
     parsed.window = DEFAULT_GRAPH_WINDOW;
     parsed.angleRadians = true;
-    (void)parseStringField(text, "name", 0, text.size(), parsed.name);
+    if (!parseStringField(text, "name", 0, text.size(), parsed.name) ||
+        parsed.name.size() > 96) {
+        return false;
+    }
     if (!parseFunctions(text, parsed.functions)) {
         return false;
     }
@@ -347,9 +353,9 @@ bool GraphSessionStorage::load(AxiomFS::FileSystem& fs,
     }
 
     std::string angle;
-    if (parseStringField(text, "angle", 0, text.size(), angle)) {
-        parsed.angleRadians = angle != "degree";
-    }
+    if (!parseStringField(text, "angle", 0, text.size(), angle) ||
+        (angle != "radian" && angle != "degree")) return false;
+    parsed.angleRadians = angle == "radian";
 
     session = parsed;
     return true;

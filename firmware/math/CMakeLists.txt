@@ -8,3 +8,4 @@ add_library(expression_lib STATIC
 target_link_libraries(expression_lib PUBLIC
         firmware_headers
 )
+target_compile_options(expression_lib PRIVATE -Wall -Wextra -Wpedantic)

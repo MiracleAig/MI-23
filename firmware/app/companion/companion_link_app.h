@@ -9,6 +9,7 @@ public:
     CompanionLinkApp(Display& display, Companion::CompanionSession& session);
 
     void enter(uint64_t nowMs);
+    void leave();
     bool handleKey(Key key);
     void tick(uint64_t nowMs);
     void renderContent(int x, int y, int w, int h);

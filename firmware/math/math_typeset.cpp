@@ -89,6 +89,16 @@ struct LayoutContext {
     bool layoutError;
 };
 
+// Calculator rendering is single-threaded. Reusing this workspace keeps the
+// parser/layout arrays out of the RP2350's small runtime stack.
+struct Workspace {
+    Context parse;
+    ParsedExpression parsed;
+    LayoutContext layout;
+};
+
+Workspace g_workspace{};
+
 static bool isValueStart(char c) {
     const unsigned char uc = static_cast<unsigned char>(c);
     return std::isdigit(static_cast<unsigned char>(c)) ||
@@ -1506,9 +1516,10 @@ static bool buildLayout(const char* expression,
 } // namespace
 
 bool measure(const char* expression, LayoutMetrics& outMetrics) {
-    Context parseCtx{};
-    ParsedExpression parsed{};
-    LayoutContext layout{};
+    if (!expression) return false;
+    Context& parseCtx = g_workspace.parse;
+    ParsedExpression& parsed = g_workspace.parsed;
+    LayoutContext& layout = g_workspace.layout;
     int rootBox = -1;
 
     if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {
@@ -1527,7 +1538,7 @@ int scaleLength(int value, float scale) {
 }
 
 int measurePrefixWidth(const char* expression, int prefixLength) {
-    if (prefixLength <= 0) {
+    if (!expression || prefixLength <= 0) {
         return 0;
     }
 
@@ -1551,9 +1562,10 @@ bool cursorMetrics(const char* expression,
                    int cursorIndex,
                    float scale,
                    CursorMetrics& outMetrics) {
-    Context parseCtx{};
-    ParsedExpression parsed{};
-    LayoutContext layout{};
+    if (!expression) return false;
+    Context& parseCtx = g_workspace.parse;
+    ParsedExpression& parsed = g_workspace.parsed;
+    LayoutContext& layout = g_workspace.layout;
     int rootBox = -1;
 
     if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {
@@ -1573,12 +1585,13 @@ bool cursorMetrics(const char* expression,
 }
 
 int moveCursor(const char* expression, int cursorIndex, CursorMove move) {
+    if (!expression) return 0;
     const int length = static_cast<int>(std::strlen(expression));
     const int clampedCursor = std::max(0, std::min(cursorIndex, length));
 
-    Context parseCtx{};
-    ParsedExpression parsed{};
-    LayoutContext layout{};
+    Context& parseCtx = g_workspace.parse;
+    ParsedExpression& parsed = g_workspace.parsed;
+    LayoutContext& layout = g_workspace.layout;
     int rootBox = -1;
 
     if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {
@@ -1658,9 +1671,10 @@ bool drawScaled(const char* expression,
                 uint16_t color,
                 float scale,
                 LayoutMetrics* outMetrics) {
-    Context parseCtx{};
-    ParsedExpression parsed{};
-    LayoutContext layout{};
+    if (!expression) return false;
+    Context& parseCtx = g_workspace.parse;
+    ParsedExpression& parsed = g_workspace.parsed;
+    LayoutContext& layout = g_workspace.layout;
     int rootBox = -1;
 
     if (!buildLayout(expression, parseCtx, parsed, layout, rootBox)) {

@@ -57,6 +57,21 @@ struct ReadResult {
     bool ok() const { return status == Status::Ok; }
 };
 
+struct MetadataResult {
+    Status status = Status::IoError;
+    bool isDirectory = false;
+    uint64_t size = 0;
+    bool ok() const { return status == Status::Ok; }
+};
+
+struct RangeReadResult {
+    Status status = Status::IoError;
+    std::vector<uint8_t> data;
+    uint64_t totalSize = 0;
+    bool eof = false;
+    bool ok() const { return status == Status::Ok; }
+};
+
 struct ListResult {
     Status status = Status::IoError;
     std::vector<DirectoryEntry> entries;
@@ -109,6 +124,10 @@ public:
     virtual Status sync();
     virtual Status format() = 0;
     virtual Status exists(const std::string& path, bool& outExists) = 0;
+    virtual MetadataResult metadata(const std::string& path);
+    virtual RangeReadResult readRange(const std::string& path, uint64_t offset, std::size_t length);
+    virtual Status writeRange(const std::string& path, uint64_t offset, const uint8_t* data,
+                              std::size_t size, bool truncate);
     virtual ReadResult readFile(const std::string& path) = 0;
     virtual Status writeFile(const std::string& path, const uint8_t* data, std::size_t size) = 0;
     virtual Status deleteFile(const std::string& path) = 0;
@@ -138,6 +157,10 @@ public:
     Status remount();
     Status format();
     Status exists(const std::string& path, bool& outExists);
+    MetadataResult metadata(const std::string& path);
+    RangeReadResult readRange(const std::string& path, uint64_t offset, std::size_t length);
+    Status writeRange(const std::string& path, uint64_t offset, const uint8_t* data,
+                      std::size_t size, bool truncate);
     ReadResult readFile(const std::string& path);
     Status writeFile(const std::string& path, const uint8_t* data, std::size_t size);
     Status writeFile(const std::string& path, const std::vector<uint8_t>& data);

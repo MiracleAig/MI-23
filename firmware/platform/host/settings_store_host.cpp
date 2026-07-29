@@ -80,14 +80,24 @@ bool HostSettingsStore::save(const SettingsState& settings) {
         return false;
     }
 
-    FILE* file = std::fopen(m_path.c_str(), "wb");
+    const std::string temporaryPath = m_path + ".tmp";
+    FILE* file = std::fopen(temporaryPath.c_str(), "wb");
     if (!file) {
         return false;
     }
 
     const std::size_t bytesWritten = std::fwrite(buffer.data(), 1, buffer.size(), file);
+    const int flushResult = bytesWritten == buffer.size() ? std::fflush(file) : EOF;
     const int closeResult = std::fclose(file);
-    return closeResult == 0 && bytesWritten == buffer.size();
+    if (closeResult != 0 || flushResult != 0 || bytesWritten != buffer.size()) {
+        (void)std::remove(temporaryPath.c_str());
+        return false;
+    }
+    if (std::rename(temporaryPath.c_str(), m_path.c_str()) != 0) {
+        (void)std::remove(temporaryPath.c_str());
+        return false;
+    }
+    return true;
 }
 
 bool HostSettingsStore::resetToDefaults(SettingsState& settings) {

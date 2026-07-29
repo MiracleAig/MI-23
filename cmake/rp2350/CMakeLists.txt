@@ -72,6 +72,7 @@ target_link_libraries(mi23 PRIVATE
         pico_stdlib
         hardware_spi
         hardware_flash
+        pico_flash
         hardware_watchdog
         pico_bootrom
         pico_unique_id
@@ -83,7 +84,12 @@ target_include_directories(mi23 PRIVATE
 
 target_compile_definitions(mi23 PRIVATE
         MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
+        PICO_STDIO_USB_STDOUT_TIMEOUT_US=0
 )
+target_compile_options(mi23 PRIVATE -Werror=frame-larger-than=2048)
+target_compile_options(mi23 PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(axiom_fs PRIVATE -Werror=frame-larger-than=2048)
+target_compile_options(expression_lib PRIVATE -Werror=frame-larger-than=2048)
 
 pico_enable_stdio_usb(mi23 1)
 pico_enable_stdio_uart(mi23 0)
@@ -118,7 +124,7 @@ endif()
 pico_add_extra_outputs(mi23)
 
 math(EXPR MI23_RP2350_FIRMWARE_FLASH_BOUNDARY
-        "${MI23_FILESYSTEM_OFFSET_BYTES} - 4096")
+        "${MI23_FILESYSTEM_OFFSET_BYTES} - 8192")
 add_custom_command(TARGET mi23 POST_BUILD
         COMMAND ${CMAKE_COMMAND}
                 -DMI23_ELF=$<TARGET_FILE:mi23>

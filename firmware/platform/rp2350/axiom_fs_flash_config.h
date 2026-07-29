@@ -21,22 +21,22 @@ constexpr uint32_t kLittleFsBlockSize = FLASH_SECTOR_SIZE;
 constexpr uint32_t kLittleFsProgramSize = FLASH_PAGE_SIZE;
 constexpr uint32_t kLittleFsBlockCount = kLittleFsSize / kLittleFsBlockSize;
 
-// Existing settings persistence remains in a dedicated sector for now. It is
-// placed immediately before AxiomFS so it does not overlap the LittleFS region.
-// TODO: migrate SettingsStore to AxiomFS once startup settings load/save can be
-// switched without changing boot behavior.
-constexpr uint32_t kSettingsSectorOffset = kLittleFsOffset - FLASH_SECTOR_SIZE;
+// Two independent sectors preserve the previous valid settings record if power
+// is lost while the inactive slot is erased or programmed.
 constexpr uint32_t kSettingsSectorSize = FLASH_SECTOR_SIZE;
+constexpr uint32_t kSettingsSlotCount = 2;
+constexpr uint32_t kSettingsSectorOffset =
+    kLittleFsOffset - kSettingsSlotCount * kSettingsSectorSize;
 
 static_assert(kLittleFsOffset % FLASH_SECTOR_SIZE == 0u, "LittleFS offset must be sector aligned");
 static_assert(kLittleFsSize % FLASH_SECTOR_SIZE == 0u, "LittleFS size must be sector aligned");
 static_assert(kLittleFsProgramSize == FLASH_PAGE_SIZE, "Flash writes must be page sized");
 static_assert(kSettingsSectorOffset % FLASH_SECTOR_SIZE == 0u, "Settings offset must be sector aligned");
-static_assert(kSettingsSectorOffset + kSettingsSectorSize <= kExpectedFlashSize,
-              "Settings sector must fit within physical flash");
+static_assert(kSettingsSectorOffset + kSettingsSlotCount * kSettingsSectorSize <= kExpectedFlashSize,
+              "Settings slots must fit within physical flash");
 static_assert(PICO_FLASH_SIZE_BYTES == kExpectedFlashSize,
               "RP2350 AxiomFS layout expects 4 MiB external flash");
-static_assert(PICO_FLASH_SIZE_BYTES > kLittleFsSize + kSettingsSectorSize,
+static_assert(PICO_FLASH_SIZE_BYTES > kLittleFsSize + kSettingsSlotCount * kSettingsSectorSize,
               "Flash layout needs room for firmware, settings, and LittleFS");
 static_assert(MI23::Metadata::kFlashSizeBytes == kExpectedFlashSize,
               "RP2350 metadata flash size must match the flash layout");

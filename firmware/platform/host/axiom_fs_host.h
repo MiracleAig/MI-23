@@ -15,6 +15,10 @@ public:
     AxiomFS::Status sync() override;
     AxiomFS::Status format() override;
     AxiomFS::Status exists(const std::string& path, bool& outExists) override;
+    AxiomFS::MetadataResult metadata(const std::string& path) override;
+    AxiomFS::RangeReadResult readRange(const std::string& path, uint64_t offset, std::size_t length) override;
+    AxiomFS::Status writeRange(const std::string& path, uint64_t offset, const uint8_t* data,
+                               std::size_t size, bool truncate) override;
     AxiomFS::ReadResult readFile(const std::string& path) override;
     AxiomFS::Status writeFile(const std::string& path, const uint8_t* data, std::size_t size) override;
     AxiomFS::Status deleteFile(const std::string& path) override;

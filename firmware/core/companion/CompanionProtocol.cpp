@@ -622,19 +622,14 @@ bool CompanionProtocol::handleFsRead(int64_t id, const JsonValue& request, std::
         return respondError(id, "invalid_argument", "offset and length must be valid integers within chunk limits", response);
     }
 
-    const AxiomFS::ReadResult read = m_filesystem.readFile(fsPath);
+    const AxiomFS::RangeReadResult read =
+        m_filesystem.readRange(fsPath, static_cast<uint64_t>(offset), static_cast<std::size_t>(length));
     if (!read.ok()) {
         return respondFsError(id, read.status, "Read file failed", response);
     }
 
-    const std::size_t fileSize = read.data.size();
-    const std::size_t start = static_cast<uint64_t>(offset) > static_cast<uint64_t>(fileSize)
-        ? fileSize
-        : static_cast<std::size_t>(offset);
-    const std::size_t available = fileSize - start;
-    const std::size_t bytesToRead = std::min<std::size_t>(available, static_cast<std::size_t>(length));
-    const uint8_t* chunkData = bytesToRead == 0 ? nullptr : read.data.data() + start;
-    const std::string encoded = base64Encode(chunkData, bytesToRead);
+    const std::size_t bytesToRead = read.data.size();
+    const std::string encoded = base64Encode(read.data.data(), bytesToRead);
 
     std::string result = "{\"path\":";
     appendJsonString(result, virtualPathFromFilesystemPath(fsPath));
@@ -645,7 +640,7 @@ bool CompanionProtocol::handleFsRead(int64_t id, const JsonValue& request, std::
     result += ",\"bytes_read\":";
     result += std::to_string(bytesToRead);
     result += ",\"eof\":";
-    result += (start + bytesToRead >= fileSize) ? "true" : "false";
+    result += read.eof ? "true" : "false";
     result += "}";
     return respondOk(id, result, response);
 }
@@ -675,6 +670,10 @@ bool CompanionProtocol::handleFsWrite(int64_t id, const JsonValue& request, std:
     if (truncate && offset != 0) {
         return respondError(id, "invalid_argument", "truncate writes must use offset 0", response);
     }
+    constexpr std::size_t kMaxEncodedChunkSize = ((kMaxFileChunkSize + 2u) / 3u) * 4u;
+    if (encoded.size() > kMaxEncodedChunkSize) {
+        return respondError(id, "invalid_argument", "Write chunk is too large", response);
+    }
 
     std::vector<uint8_t> decoded;
     if (!base64Decode(encoded, decoded)) {
@@ -685,37 +684,16 @@ bool CompanionProtocol::handleFsWrite(int64_t id, const JsonValue& request, std:
         return respondError(id, "invalid_argument", "Write chunk is too large", response);
     }
 
-    std::vector<uint8_t> fileData;
-    if (!truncate) {
-        AxiomFS::ReadResult existing = m_filesystem.readFile(fsPath);
-        if (existing.ok()) {
-            fileData = std::move(existing.data);
-        } else if (existing.status == AxiomFS::Status::NotFound && offset == 0) {
-            fileData.clear();
-        } else {
-            return respondFsError(id, existing.status, "Read existing file failed", response);
-        }
-    }
-
     const uint64_t endOffset = static_cast<uint64_t>(offset) + static_cast<uint64_t>(bytesWritten);
     if (endOffset > kMaxCompanionFileSize) {
         return respondError(id, "invalid_argument", "Resulting file is too large for companion writes", response);
     }
-    if (!truncate && static_cast<uint64_t>(offset) > static_cast<uint64_t>(fileData.size())) {
-        return respondError(id, "invalid_argument", "Write offset is beyond the current file size", response);
-    }
-
-    if (truncate) {
-        fileData = std::move(decoded);
-    } else {
-        if (endOffset > fileData.size()) {
-            fileData.resize(static_cast<std::size_t>(endOffset));
-        }
-        std::copy(decoded.begin(), decoded.end(), fileData.begin() + static_cast<std::ptrdiff_t>(offset));
-    }
-
-    const AxiomFS::Status status = m_filesystem.writeFile(fsPath, fileData);
+    const AxiomFS::Status status = m_filesystem.writeRange(
+        fsPath, static_cast<uint64_t>(offset), decoded.data(), decoded.size(), truncate);
     if (status != AxiomFS::Status::Ok) {
+        if (status == AxiomFS::Status::InvalidPath) {
+            return respondError(id, "invalid_argument", "Write offset is beyond the current file size", response);
+        }
         return respondFsError(id, status, "Write file failed", response);
     }
 

@@ -1,7 +1,7 @@
 #include "platform/rp2350/axiom_fs_flash_block_device.h"
 
 #include "hardware/flash.h"
-#include "hardware/sync.h"
+#include "pico/flash.h"
 #include "platform/rp2350/axiom_fs_flash_config.h"
 
 #include <cstdio>
@@ -28,6 +28,22 @@ uint32_t absoluteOffset(uint32_t block, uint32_t offset) {
     return RP2350FlashLayout::kLittleFsOffset
         + block * RP2350FlashLayout::kLittleFsBlockSize
         + offset;
+}
+
+struct FlashOperation {
+    uint32_t offset;
+    const uint8_t* data;
+    uint32_t size;
+};
+
+void programFlash(void* parameter) {
+    const auto* operation = static_cast<const FlashOperation*>(parameter);
+    flash_range_program(operation->offset, operation->data, operation->size);
+}
+
+void eraseFlash(void* parameter) {
+    const auto* operation = static_cast<const FlashOperation*>(parameter);
+    flash_range_erase(operation->offset, operation->size);
 }
 
 const uint8_t* flashPtr(uint32_t offset) {
@@ -66,7 +82,8 @@ RP2350FlashBlockDevice::LayoutError RP2350FlashBlockDevice::validateLayout() {
     if (RP2350FlashLayout::kLittleFsBlockCount < kMinimumLittleFsBlocks) {
         return LayoutError::TooSmall;
     }
-    if (RP2350FlashLayout::kSettingsSectorOffset + RP2350FlashLayout::kSettingsSectorSize
+    if (RP2350FlashLayout::kSettingsSectorOffset +
+            RP2350FlashLayout::kSettingsSlotCount * RP2350FlashLayout::kSettingsSectorSize
         > RP2350FlashLayout::kLittleFsOffset) {
         return LayoutError::SettingsOverlap;
     }
@@ -218,12 +235,9 @@ int RP2350FlashBlockDevice::program(uint32_t block, uint32_t offset, const void*
         return -1;
     }
 
-    const uint32_t irqState = save_and_disable_interrupts();
-    flash_range_program(absoluteOffset(block, offset),
-                        static_cast<const uint8_t*>(buffer),
-                        size);
-    restore_interrupts(irqState);
-    return 0;
+    FlashOperation operation{absoluteOffset(block, offset),
+                             static_cast<const uint8_t*>(buffer), size};
+    return flash_safe_execute(programFlash, &operation, 1000u) == PICO_OK ? 0 : -1;
 }
 
 int RP2350FlashBlockDevice::erase(uint32_t block) {
@@ -231,10 +245,9 @@ int RP2350FlashBlockDevice::erase(uint32_t block) {
         return -1;
     }
 
-    const uint32_t irqState = save_and_disable_interrupts();
-    flash_range_erase(absoluteOffset(block, 0), RP2350FlashLayout::kLittleFsBlockSize);
-    restore_interrupts(irqState);
-    return 0;
+    FlashOperation operation{absoluteOffset(block, 0), nullptr,
+                             RP2350FlashLayout::kLittleFsBlockSize};
+    return flash_safe_execute(eraseFlash, &operation, 1000u) == PICO_OK ? 0 : -1;
 }
 
 int RP2350FlashBlockDevice::sync() {

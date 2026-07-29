@@ -392,3 +392,29 @@ TEST(AxiomFSHost, CalculatorHistoryPersistsAsReadableJson) {
 
     std::filesystem::remove_all(root, error);
 }
+TEST(AxiomFS, RangedReadsAndWritesRespectOffsetsAndTruncation) {
+    const auto root = std::filesystem::temp_directory_path() / "mi23_axiom_range_tests";
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    HostAxiomFSBackend backend(root);
+    AxiomFS::FileSystem fs(backend);
+    ASSERT_EQ(fs.mount(), AxiomFS::Status::Ok);
+
+    const uint8_t initial[] = {'a', 'b', 'c'};
+    ASSERT_EQ(fs.writeRange("range.bin", 0, initial, sizeof(initial), true), AxiomFS::Status::Ok);
+    auto part = fs.readRange("range.bin", 1, 1);
+    ASSERT_TRUE(part.ok());
+    EXPECT_EQ(part.data, std::vector<uint8_t>({'b'}));
+    EXPECT_FALSE(part.eof);
+    EXPECT_EQ(part.totalSize, 3u);
+
+    const uint8_t suffix[] = {'X', 'Y'};
+    EXPECT_EQ(fs.writeRange("range.bin", 3, suffix, sizeof(suffix), false), AxiomFS::Status::Ok);
+    EXPECT_EQ(fs.writeRange("range.bin", 6, suffix, sizeof(suffix), false), AxiomFS::Status::InvalidPath);
+    auto tail = fs.readRange("range.bin", 3, 10);
+    ASSERT_TRUE(tail.ok());
+    EXPECT_EQ(tail.data, std::vector<uint8_t>({'X', 'Y'}));
+    EXPECT_TRUE(tail.eof);
+    EXPECT_EQ(fs.readRange("range.bin", 6, 1).status, AxiomFS::Status::InvalidPath);
+    std::filesystem::remove_all(root, error);
+}

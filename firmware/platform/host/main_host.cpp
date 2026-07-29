@@ -271,6 +271,9 @@ private:
 
     void goHome() {
         if (m_activeApp != AppId::Home) {
+            if (m_activeApp == AppId::Companion) {
+                m_companionLink.leave();
+            }
             m_home.enter();
             m_activeApp = AppId::Home;
             m_needsFrame = true;

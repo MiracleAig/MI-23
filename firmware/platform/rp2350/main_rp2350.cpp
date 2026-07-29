@@ -38,12 +38,6 @@ static constexpr int SCREEN_H = DISPLAY_HEIGHT;
 static constexpr int CONTENT_Y = SystemTitleBar::kHeight;
 static constexpr int CONTENT_H = SCREEN_H - CONTENT_Y;
 
-void waitForUsbSerialInDebugBuild() {
-#ifndef NDEBUG
-    sleep_ms(1800);
-#endif
-}
-
 void logEarlyBootDiagnostics(AxiomFS::FileSystem& filesystem) {
     std::printf("[boot][rp2350] MI-23 firmware=%s build_target=%s\n",
                 MI23_FIRMWARE_VERSION,
@@ -127,6 +121,7 @@ public:
                         CompanionLinkApp& companionLink,
                         SettingsStore& settingsStore,
                         AxiomFS::FileSystem& filesystem,
+                        StartupBackend& startup,
                         BootManager& boot,
                         SettingsState& settings)
         : m_display(display)
@@ -137,6 +132,8 @@ public:
         , m_settingsApp(settingsApp)
         , m_companionLink(companionLink)
         , m_settingsStore(settingsStore)
+        , m_filesystem(filesystem)
+        , m_startup(startup)
         , m_boot(boot)
         , m_settings(settings)
         , m_graph(&m_settings, &filesystem)
@@ -163,6 +160,9 @@ public:
             } else if (m_boot.needsRender()) {
                 m_boot.render();
             }
+        }
+        if (m_activeApp != AppId::Boot) {
+            m_startup.serviceDeferredWork(m_settings);
         }
 
         const Key raw = m_boot.inputReady() ? m_keypad.getKey() : Key::NONE;
@@ -269,6 +269,8 @@ private:
     SettingsApp& m_settingsApp;
     CompanionLinkApp& m_companionLink;
     SettingsStore& m_settingsStore;
+    AxiomFS::FileSystem& m_filesystem;
+    StartupBackend& m_startup;
     BootManager& m_boot;
     SettingsState& m_settings;
     GraphApp m_graph;
@@ -301,7 +303,9 @@ private:
     }
 
     void finishBoot() {
-        (void)m_calculator.loadPersistentHistory();
+        if (m_filesystem.isMounted()) {
+            (void)m_calculator.loadPersistentHistory();
+        }
         m_home.enter();
         m_activeApp = AppId::Home;
         m_shellDirty = true;
@@ -312,6 +316,7 @@ private:
     void goHome() {
         if (m_activeApp != AppId::Home) {
             if (m_activeApp == AppId::Companion) {
+                m_companionLink.leave();
                 m_display.setTimingLogsEnabled(true);
             }
             maybePersistSettings();
@@ -403,39 +408,38 @@ private:
 
 int main() {
     stdio_init_all();
-    waitForUsbSerialInDebugBuild();
 
-    DisplayRP2350 display;
-    KeypadRP2350 keypad1;
-    KeypadRP2350_2 keypad2;
-    DualKeypad keypad(keypad1, keypad2);
+    static DisplayRP2350 display;
+    static KeypadRP2350 keypad1;
+    static KeypadRP2350_2 keypad2;
+    static DualKeypad keypad(keypad1, keypad2);
 
-    SettingsState settings;
-    RP2350SettingsStore settingsStore;
-    RP2350StartupBackend startup(keypad, settingsStore);
+    static SettingsState settings;
+    static RP2350SettingsStore settingsStore;
+    static RP2350StartupBackend startup(keypad, settingsStore);
     logEarlyBootDiagnostics(startup.filesystem());
 
-    HomeScreen home(display);
-    CalculatorApp calculator(display, keypad, rpCalculatorConfig(settings, &startup.filesystem()));
-    FileBrowserApp files(display, &startup.filesystem());
-    SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
-    RP2350UsbCdcTransport companionTransport;
-    RP2350CompanionSystemActions companionSystemActions;
-    char deviceId[40] = {};
+    static HomeScreen home(display);
+    static CalculatorApp calculator(display, keypad, rpCalculatorConfig(settings, &startup.filesystem()));
+    static FileBrowserApp files(display, &startup.filesystem());
+    static SettingsApp settingsApp(display, settings, "Hardware", &startup.filesystem());
+    static RP2350UsbCdcTransport companionTransport;
+    static RP2350CompanionSystemActions companionSystemActions;
+    static char deviceId[40] = {};
     buildStableDeviceId(deviceId, sizeof(deviceId));
-    Companion::DeviceInfo deviceInfo{};
+    static Companion::DeviceInfo deviceInfo{};
     deviceInfo.deviceId = deviceId;
     deviceInfo.serialNumber = deviceId;
-    Companion::CompanionProtocol companionProtocol(startup.filesystem(),
+    static Companion::CompanionProtocol companionProtocol(startup.filesystem(),
                                                    settings,
                                                    settingsStore,
                                                    deviceInfo,
                                                    &companionSystemActions);
-    Companion::CompanionSession companionSession(companionTransport, companionProtocol);
-    CompanionLinkApp companionLink(display, companionSession);
-    BootManager boot(display, settings, startup);
+    static Companion::CompanionSession companionSession(companionTransport, companionProtocol);
+    static CompanionLinkApp companionLink(display, companionSession);
+    static BootManager boot(display, settings, startup);
 
-    RP2350AppController app(display,
+    static RP2350AppController app(display,
                             keypad,
                             home,
                             calculator,
@@ -444,6 +448,7 @@ int main() {
                             companionLink,
                             settingsStore,
                             startup.filesystem(),
+                            startup,
                             boot,
                             settings);
     app.init();

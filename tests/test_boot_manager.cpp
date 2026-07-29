@@ -44,11 +44,18 @@ public:
         return {};
     }
 
-    StartupCheckResult checkStorage() override { return {}; }
+    StartupCheckResult checkStorage() override { return storageResult; }
     StartupCheckResult verifyResources(SettingsState&) override { return {}; }
     StartupCheckResult startRuntime(SettingsState&) override { return {}; }
+    StartupCheckResult formatStorage() override {
+        ++formatCalls;
+        return formatResult;
+    }
 
     bool initializedInput = false;
+    int formatCalls = 0;
+    StartupCheckResult storageResult{};
+    StartupCheckResult formatResult{true, true, true, "Storage formatted and verified."};
 };
 
 std::filesystem::path uniquePath(const char* name) {
@@ -98,6 +105,58 @@ TEST(BootManager, SuccessfulBootSequenceTransitionsToFinishedState) {
     EXPECT_TRUE(boot.bootSucceeded());
     EXPECT_TRUE(backend.initializedInput);
     EXPECT_EQ(settings.angleMode, AngleMode::Degrees);
+}
+
+TEST(BootManager, CorruptStorageCanContinueDegradedWithoutFormatting) {
+    BootNullDisplay display;
+    SettingsState settings;
+    FakeStartupBackend backend;
+    backend.storageResult = {false, true, false, "Storage corrupt.", true};
+    BootManager boot(display, settings, backend);
+    boot.begin();
+    for (int i = 0; i < 12 && !boot.canContinue(); ++i) boot.tick();
+
+    ASSERT_TRUE(boot.canContinue());
+    boot.handleKey(Key::ENTER);
+    EXPECT_TRUE(boot.isFinished());
+    EXPECT_FALSE(boot.bootSucceeded());
+    EXPECT_EQ(backend.formatCalls, 0);
+}
+
+TEST(BootManager, StorageRecoveryRequiresTwoDestructiveConfirmations) {
+    BootNullDisplay display;
+    SettingsState settings;
+    FakeStartupBackend backend;
+    backend.storageResult = {false, true, false, "Storage corrupt.", true};
+    BootManager boot(display, settings, backend);
+    boot.begin();
+    for (int i = 0; i < 12 && !boot.canContinue(); ++i) boot.tick();
+
+    boot.handleKey(Key::DELETE_KEY);
+    EXPECT_EQ(backend.formatCalls, 0);
+    boot.handleKey(Key::DELETE_KEY);
+    EXPECT_EQ(backend.formatCalls, 0);
+    boot.handleKey(Key::DELETE_KEY);
+    EXPECT_EQ(backend.formatCalls, 1);
+
+    for (int i = 0; i < 12 && !boot.isFinished(); ++i) boot.tick();
+    EXPECT_TRUE(boot.isFinished());
+    EXPECT_TRUE(boot.bootSucceeded());
+}
+
+TEST(BootManager, ClearCancelsStorageFormatConfirmation) {
+    BootNullDisplay display;
+    SettingsState settings;
+    FakeStartupBackend backend;
+    backend.storageResult = {false, true, false, "Storage corrupt.", true};
+    BootManager boot(display, settings, backend);
+    boot.begin();
+    for (int i = 0; i < 12 && !boot.canContinue(); ++i) boot.tick();
+
+    boot.handleKey(Key::DELETE_KEY);
+    boot.handleKey(Key::CLEAR);
+    EXPECT_TRUE(boot.canContinue());
+    EXPECT_EQ(backend.formatCalls, 0);
 }
 
 TEST(HostStartupBackend, MissingSettingsFileLoadsDefaultsAndRepairsPersistence) {

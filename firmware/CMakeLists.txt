@@ -9,6 +9,8 @@ target_include_directories(firmware_headers INTERFACE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
+set(MI23_WARNING_FLAGS -Wall -Wextra -Wpedantic)
+
 add_subdirectory(math)
 
 add_library(axiom_fs STATIC
@@ -21,6 +23,7 @@ add_library(axiom_fs STATIC
 target_link_libraries(axiom_fs PUBLIC
         firmware_headers
 )
+target_compile_options(axiom_fs PRIVATE ${MI23_WARNING_FLAGS})
 
 if(PLATFORM STREQUAL "host")
     target_sources(axiom_fs PRIVATE
@@ -91,6 +94,7 @@ if(PLATFORM STREQUAL "host")
     target_compile_definitions(calculator_app PRIVATE
             MI23_ENABLE_DEVELOPER_OPTIONS=${MI23_DEVELOPER_OPTIONS_DEFINE}
     )
+    target_compile_options(calculator_app PRIVATE ${MI23_WARNING_FLAGS})
 elseif(PLATFORM STREQUAL "rp2350")
     target_sources(axiom_fs PRIVATE
             platform/rp2350/axiom_fs_flash_block_device.cpp

@@ -19,6 +19,7 @@ add_library(host_platform STATIC
 target_link_libraries(host_platform PUBLIC
         firmware_headers
 )
+target_compile_options(host_platform PRIVATE -Wall -Wextra -Wpedantic)
 
 target_include_directories(host_platform PUBLIC
         ${SDL2_INCLUDE_DIRS}

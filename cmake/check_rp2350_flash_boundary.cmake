@@ -23,6 +23,7 @@ if(NOT objdump_result EQUAL 0)
 endif()
 
 set(xip_base 0x10000000)
+set(xip_window_end 0x11000000)
 set(max_flash_end 0)
 
 string(REPLACE "\n" ";" objdump_lines "${objdump_output}")
@@ -36,8 +37,14 @@ foreach(line IN LISTS objdump_lines)
         math(EXPR flash_limit "${xip_base} + ${MI23_FLASH_BOUNDARY}")
         if(section_size GREATER 0 AND
            NOT section_lma LESS flash_start AND
-           section_lma LESS flash_limit)
+           section_lma LESS xip_window_end)
             math(EXPR section_end "${section_lma} - ${xip_base} + ${section_size}")
+            if(section_end GREATER MI23_FLASH_BOUNDARY)
+                message(FATAL_ERROR
+                        "RP2350 section at load address 0x${section_lma_hex} ends at flash "
+                        "offset ${section_end}, overlapping reserved storage at "
+                        "${MI23_FLASH_BOUNDARY}.")
+            endif()
             if(section_end GREATER max_flash_end)
                 set(max_flash_end "${section_end}")
             endif()

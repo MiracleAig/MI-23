@@ -22,6 +22,7 @@ RP2350StartupBackend::RP2350StartupBackend(Keypad& keypad,
     , m_fs(m_fsBackend)
     , m_firmwareVersion(firmwareVersion)
     , m_pendingSettingsRepair(false)
+    , m_settingsRepairAttempted(false)
 {}
 
 const char* RP2350StartupBackend::platformName() const {
@@ -40,17 +41,31 @@ StartupCheckResult RP2350StartupBackend::initializeInput() {
 
 StartupCheckResult RP2350StartupBackend::loadSettings(SettingsState& settings) {
     std::printf("[boot][rp2350] loading settings from flash\n");
-    if (m_settingsStore.load(settings)) {
+    const RP2350SettingsStore::LoadResult loadResult = m_settingsStore.loadDetailed(settings);
+    if (loadResult == RP2350SettingsStore::LoadResult::ValidRecord) {
         return {};
     }
+    if (loadResult == RP2350SettingsStore::LoadResult::LayoutMismatch ||
+        loadResult == RP2350SettingsStore::LoadResult::FlashIoFailure) {
+        settings.resetToDefaults();
+        settings.sanitize();
+        return {true, true, true, loadResult == RP2350SettingsStore::LoadResult::LayoutMismatch
+            ? "Settings layout mismatch; defaults active."
+            : "Settings flash read failed; defaults active."};
+    }
 
-    settings.resetToDefaults();
+    if (loadResult != RP2350SettingsStore::LoadResult::LegacyRecord) {
+        settings.resetToDefaults();
+    }
     settings.sanitize();
-    m_pendingSettingsRepair = !m_settingsStore.save(settings);
+    // Loading is deliberately read-only. Flash repair is serviced only after
+    // Home is available, so invalid settings cannot stall early boot.
+    m_pendingSettingsRepair = true; // includes legacy migration
+    m_settingsRepairAttempted = false;
     return {true, true, true,
-            m_pendingSettingsRepair
-                ? "Settings recovery deferred; defaults active."
-                : "Settings restored to defaults."};
+            loadResult == RP2350SettingsStore::LoadResult::LegacyRecord
+                ? "Legacy settings loaded; migration deferred."
+                : "Settings recovery deferred; defaults active."};
 }
 
 StartupCheckResult RP2350StartupBackend::checkStorage() {
@@ -112,15 +127,33 @@ StartupCheckResult RP2350StartupBackend::checkStorage() {
 }
 
 StartupCheckResult RP2350StartupBackend::verifyResources(SettingsState& settings) {
+    (void)settings;
     std::printf("[boot][rp2350] verifying storage resources\n");
     if (m_pendingSettingsRepair) {
-        if (m_settingsStore.save(settings)) {
-            m_pendingSettingsRepair = false;
-            return {true, true, true, "Recovered settings written to flash."};
-        }
-        return {false, true, false, "Flash writes failed; continuing without persistence."};
+        return {true, true, true, "Settings repair queued until Home is ready."};
     }
     return {};
+}
+
+StartupCheckResult RP2350StartupBackend::formatStorage() {
+    std::printf("[boot][rp2350] explicit storage recovery requested\n");
+    const AxiomFS::HealthResult result = AxiomFS::formatAndInitialize(m_fs);
+    if (result.status != AxiomFS::FilesystemStatus::Healthy ||
+        !result.mounted || !result.defaultLayoutReady || !result.readWriteReady) {
+        return {false, true, false, "Format or verification failed; storage preserved if possible."};
+    }
+    return {true, true, true, "Storage formatted and verified."};
+}
+
+void RP2350StartupBackend::serviceDeferredWork(SettingsState& settings) {
+    if (!m_pendingSettingsRepair || m_settingsRepairAttempted) return;
+    m_settingsRepairAttempted = true;
+    if (m_settingsStore.save(settings)) {
+        m_pendingSettingsRepair = false;
+        std::printf("[settings][rp2350] deferred repair complete\n");
+    } else {
+        std::printf("[settings][rp2350] warning: deferred repair failed; defaults remain temporary\n");
+    }
 }
 
 StartupCheckResult RP2350StartupBackend::startRuntime(SettingsState& settings) {

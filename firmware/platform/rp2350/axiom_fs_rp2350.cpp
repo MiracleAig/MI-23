@@ -3,6 +3,7 @@
 #include "platform/rp2350/axiom_fs_flash_block_device.h"
 #include "platform/rp2350/axiom_fs_flash_config.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -379,6 +380,107 @@ AxiomFS::ReadResult RP2350AxiomFSBackend::readFile(const std::string& path) {
 #else
     result.status = AxiomFS::Status::Unsupported;
     return result;
+#endif
+}
+
+AxiomFS::MetadataResult RP2350AxiomFSBackend::metadata(const std::string& path) {
+    AxiomFS::MetadataResult result;
+    if (!m_mounted) {
+        result.status = AxiomFS::Status::NotMounted;
+        return result;
+    }
+#if MI23_ENABLE_LITTLEFS
+    std::string normalized;
+    result.status = normalizeMountedPath(path, normalized, false);
+    if (result.status != AxiomFS::Status::Ok) return result;
+    lfs_info info{};
+    const int lfsResult = lfs_stat(&m_lfs, normalized.c_str(), &info);
+    result.status = mapLittleFsError(lfsResult);
+    if (lfsResult == 0) {
+        result.isDirectory = info.type == LFS_TYPE_DIR;
+        result.size = info.size;
+    }
+#else
+    result.status = AxiomFS::Status::Unsupported;
+#endif
+    return result;
+}
+
+AxiomFS::RangeReadResult RP2350AxiomFSBackend::readRange(const std::string& path,
+                                                         uint64_t offset,
+                                                         std::size_t length) {
+    AxiomFS::RangeReadResult result;
+    const AxiomFS::MetadataResult info = metadata(path);
+    result.status = info.status;
+    result.totalSize = info.size;
+    if (!info.ok() || info.isDirectory) {
+        if (info.ok()) result.status = AxiomFS::Status::InvalidPath;
+        return result;
+    }
+    if (offset > info.size) {
+        result.status = AxiomFS::Status::InvalidPath;
+        return result;
+    }
+#if MI23_ENABLE_LITTLEFS
+    std::string normalized;
+    result.status = normalizeMountedPath(path, normalized, false);
+    if (result.status != AxiomFS::Status::Ok) return result;
+    lfs_file_t file{};
+    int lfsResult = lfs_file_open(&m_lfs, &file, normalized.c_str(), LFS_O_RDONLY);
+    if (lfsResult == 0 && offset != 0) {
+        lfsResult = static_cast<int>(lfs_file_seek(&m_lfs, &file, static_cast<lfs_soff_t>(offset), LFS_SEEK_SET));
+        if (lfsResult >= 0) lfsResult = 0;
+    }
+    const std::size_t count = static_cast<std::size_t>(std::min<uint64_t>(length, info.size - offset));
+    result.data.resize(count);
+    if (lfsResult == 0 && count != 0) {
+        const lfs_ssize_t read = lfs_file_read(&m_lfs, &file, result.data.data(), count);
+        lfsResult = read == static_cast<lfs_ssize_t>(count) ? 0 : (read < 0 ? static_cast<int>(read) : LFS_ERR_IO);
+    }
+    const int closeResult = lfs_file_close(&m_lfs, &file);
+    result.status = mapLittleFsError(lfsResult != 0 ? lfsResult : closeResult);
+    result.eof = result.ok() && offset + count == info.size;
+#else
+    result.status = AxiomFS::Status::Unsupported;
+#endif
+    return result;
+}
+
+AxiomFS::Status RP2350AxiomFSBackend::writeRange(const std::string& path,
+                                                 uint64_t offset,
+                                                 const uint8_t* data,
+                                                 std::size_t size,
+                                                 bool truncate) {
+    if (!m_mounted) return AxiomFS::Status::NotMounted;
+    if ((!data && size != 0) || (truncate && offset != 0)) return AxiomFS::Status::InvalidPath;
+#if MI23_ENABLE_LITTLEFS
+    std::string normalized;
+    AxiomFS::Status status = normalizeMountedPath(path, normalized, false);
+    if (status != AxiomFS::Status::Ok) return status;
+    lfs_info info{};
+    const int statResult = lfs_stat(&m_lfs, normalized.c_str(), &info);
+    const uint64_t currentSize = statResult == 0 ? info.size : 0;
+    if (statResult != 0 && statResult != LFS_ERR_NOENT) return mapLittleFsError(statResult);
+    if ((statResult == LFS_ERR_NOENT && offset != 0) || (!truncate && offset > currentSize)) {
+        return AxiomFS::Status::InvalidPath;
+    }
+    int flags = LFS_O_WRONLY | LFS_O_CREAT;
+    if (truncate) flags |= LFS_O_TRUNC;
+    lfs_file_t file{};
+    int lfsResult = lfs_file_open(&m_lfs, &file, normalized.c_str(), flags);
+    if (lfsResult == 0 && offset != 0) {
+        lfsResult = static_cast<int>(lfs_file_seek(&m_lfs, &file, static_cast<lfs_soff_t>(offset), LFS_SEEK_SET));
+        if (lfsResult >= 0) lfsResult = 0;
+    }
+    if (lfsResult == 0 && size != 0) {
+        const lfs_ssize_t written = lfs_file_write(&m_lfs, &file, data, size);
+        lfsResult = written == static_cast<lfs_ssize_t>(size) ? 0
+            : (written < 0 ? static_cast<int>(written) : LFS_ERR_IO);
+    }
+    const int closeResult = lfs_file_close(&m_lfs, &file);
+    return mapLittleFsError(lfsResult != 0 ? lfsResult : closeResult);
+#else
+    return AxiomFS::Status::Unsupported;
 #endif
 }
 

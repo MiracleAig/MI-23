@@ -21,27 +21,6 @@ add_executable(mi23_tests
         test_settings_app.cpp
         test_settings_store.cpp
         test_system_status.cpp
-        ../firmware/app/calculator/calculator_app.cpp
-        ../firmware/app/boot/boot_manager.cpp
-        ../firmware/app/companion/companion_link_app.cpp
-        ../firmware/app/files/file_browser_app.cpp
-        ../firmware/app/graphing/graph_app.cpp
-        ../firmware/app/graphing/graph_renderer.cpp
-        ../firmware/app/graphing/graph_storage.cpp
-        ../firmware/app/home/calculator_home.cpp
-        ../firmware/app/settings/settings_app.cpp
-        ../firmware/app/settings/settings_state.cpp
-        ../firmware/app/ui/system_status.cpp
-        ../firmware/app/ui/title_bar.cpp
-        ../firmware/hal/settings_store.cpp
-        ../firmware/core/companion/CompanionProtocol.cpp
-        ../firmware/core/companion/CompanionJson.cpp
-        ../firmware/core/companion/CompanionSession.cpp
-        ../firmware/core/companion/CompanionUtils.cpp
-        ../firmware/platform/host/companion_system_actions_host.cpp
-        ../firmware/platform/host/simulator_keypad.cpp
-        ../firmware/platform/host/settings_store_host.cpp
-        ../firmware/platform/host/startup_host.cpp
 )
 
 target_include_directories(mi23_tests
@@ -57,8 +36,7 @@ target_link_libraries(mi23_tests
         PRIVATE
         GTest::GTest
         GTest::Main
-        axiom_fs
-        expression_lib
+        calculator_app
 )
 
 gtest_discover_tests(mi23_tests)

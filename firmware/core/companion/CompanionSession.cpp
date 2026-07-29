@@ -29,16 +29,27 @@ CompanionSession::CompanionSession(UsbCdcTransport& transport, CompanionProtocol
     , m_protocol(protocol)
     , m_line()
     , m_lineStartedAtMs(0)
-    , m_discardingLine(false) {}
+    , m_discardingLine(false)
+    , m_active(false) {}
 
 void CompanionSession::enter(uint64_t nowMs) {
+    drainInput();
     m_line.clear();
     m_lineStartedAtMs = nowMs;
     m_discardingLine = false;
+    m_active = true;
     logCompanion("[companion] companion mode entered\n");
 }
 
+void CompanionSession::leave() {
+    m_active = false;
+    m_line.clear();
+    m_discardingLine = false;
+    drainInput();
+}
+
 void CompanionSession::poll(uint64_t nowMs) {
+    if (!m_active) return;
     if (!m_line.empty() && nowMs - m_lineStartedAtMs > kLineTimeoutMs) {
         logCompanion("[companion] malformed command: line timeout\n");
         m_line.clear();
@@ -55,6 +66,10 @@ void CompanionSession::poll(uint64_t nowMs) {
     } while (count == static_cast<int>(sizeof(buffer)));
 
     m_protocol.pollSystemActions(nowMs);
+}
+
+bool CompanionSession::isActive() const {
+    return m_active;
 }
 
 bool CompanionSession::isConnected() const {
@@ -132,6 +147,12 @@ void CompanionSession::sendResponse(const std::string& response) {
     } else {
         logCompanion("[companion] response send failed: %u bytes\n",
                      static_cast<unsigned>(response.size()));
+    }
+}
+
+void CompanionSession::drainInput() {
+    uint8_t buffer[32];
+    while (m_transport.read(buffer, sizeof(buffer)) > 0) {
     }
 }
 

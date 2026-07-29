@@ -24,6 +24,10 @@ void CompanionLinkApp::enter(uint64_t nowMs) {
     invalidate();
 }
 
+void CompanionLinkApp::leave() {
+    m_session.leave();
+}
+
 bool CompanionLinkApp::handleKey(Key key) {
     return key == Key::CLEAR;
 }

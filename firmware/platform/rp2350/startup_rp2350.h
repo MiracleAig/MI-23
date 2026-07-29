@@ -21,6 +21,8 @@ public:
     StartupCheckResult checkStorage() override;
     StartupCheckResult verifyResources(SettingsState& settings) override;
     StartupCheckResult startRuntime(SettingsState& settings) override;
+    StartupCheckResult formatStorage() override;
+    void serviceDeferredWork(SettingsState& settings) override;
     AxiomFS::FileSystem& filesystem();
 
 private:
@@ -30,4 +32,5 @@ private:
     AxiomFS::FileSystem m_fs;
     const char* m_firmwareVersion;
     bool m_pendingSettingsRepair;
+    bool m_settingsRepairAttempted;
 };

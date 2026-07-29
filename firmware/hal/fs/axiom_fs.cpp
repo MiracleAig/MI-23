@@ -103,6 +103,44 @@ AxiomFS::Status Backend::sync() {
     return Status::Ok;
 }
 
+MetadataResult Backend::metadata(const std::string& path) {
+    const ReadResult read = readFile(path);
+    return {read.status, false, static_cast<uint64_t>(read.data.size())};
+}
+
+RangeReadResult Backend::readRange(const std::string& path, uint64_t offset, std::size_t length) {
+    RangeReadResult result;
+    ReadResult whole = readFile(path);
+    result.status = whole.status;
+    result.totalSize = whole.data.size();
+    if (!whole.ok() || offset > result.totalSize) {
+        if (whole.ok()) result.status = Status::InvalidPath;
+        return result;
+    }
+    const std::size_t start = static_cast<std::size_t>(offset);
+    const std::size_t count = std::min(length, whole.data.size() - start);
+    result.data.assign(whole.data.begin() + static_cast<std::ptrdiff_t>(start),
+                       whole.data.begin() + static_cast<std::ptrdiff_t>(start + count));
+    result.eof = start + count == whole.data.size();
+    return result;
+}
+
+Status Backend::writeRange(const std::string& path, uint64_t offset, const uint8_t* data,
+                           std::size_t size, bool truncate) {
+    if (truncate) {
+        if (offset != 0) return Status::InvalidPath;
+        return writeFile(path, data, size);
+    }
+    ReadResult whole = readFile(path);
+    if (whole.status == Status::NotFound && offset == 0) whole = {Status::Ok, {}};
+    if (!whole.ok() || offset > whole.data.size()) return whole.ok() ? Status::InvalidPath : whole.status;
+    const uint64_t end = offset + size;
+    if (end < offset || end > static_cast<uint64_t>(SIZE_MAX)) return Status::NoSpace;
+    if (end > whole.data.size()) whole.data.resize(static_cast<std::size_t>(end));
+    if (size != 0) std::copy(data, data + size, whole.data.begin() + static_cast<std::ptrdiff_t>(offset));
+    return writeFile(path, whole.data.data(), whole.data.size());
+}
+
 bool Backend::isMounted() const {
     return false;
 }
@@ -195,6 +233,19 @@ Status FileSystem::format() {
 
 Status FileSystem::exists(const std::string& path, bool& outExists) {
     return m_backend.exists(path, outExists);
+}
+
+MetadataResult FileSystem::metadata(const std::string& path) {
+    return m_backend.metadata(path);
+}
+
+RangeReadResult FileSystem::readRange(const std::string& path, uint64_t offset, std::size_t length) {
+    return m_backend.readRange(path, offset, length);
+}
+
+Status FileSystem::writeRange(const std::string& path, uint64_t offset, const uint8_t* data,
+                              std::size_t size, bool truncate) {
+    return m_backend.writeRange(path, offset, data, size, truncate);
 }
 
 ReadResult FileSystem::readFile(const std::string& path) {

@@ -100,6 +100,99 @@ AxiomFS::Status HostAxiomFSBackend::exists(const std::string& path, bool& outExi
     return AxiomFS::Status::Ok;
 }
 
+AxiomFS::MetadataResult HostAxiomFSBackend::metadata(const std::string& path) {
+    AxiomFS::MetadataResult result;
+    if (!m_mounted) {
+        result.status = AxiomFS::Status::NotMounted;
+        return result;
+    }
+    std::filesystem::path resolved;
+    result.status = resolvePath(path, resolved, false);
+    if (result.status != AxiomFS::Status::Ok) return result;
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(resolved, error);
+    if (error == std::errc::no_such_file_or_directory) {
+        result.status = AxiomFS::Status::NotFound;
+        return result;
+    }
+    if (error || std::filesystem::is_symlink(status)) {
+        result.status = error ? mapFilesystemError(error) : AxiomFS::Status::InvalidPath;
+        return result;
+    }
+    result.isDirectory = std::filesystem::is_directory(status);
+    if (!result.isDirectory && !std::filesystem::is_regular_file(status)) {
+        result.status = AxiomFS::Status::InvalidPath;
+        return result;
+    }
+    result.size = result.isDirectory ? 0 : std::filesystem::file_size(resolved, error);
+    result.status = error ? mapFilesystemError(error) : AxiomFS::Status::Ok;
+    return result;
+}
+
+AxiomFS::RangeReadResult HostAxiomFSBackend::readRange(const std::string& path,
+                                                       uint64_t offset,
+                                                       std::size_t length) {
+    AxiomFS::RangeReadResult result;
+    const AxiomFS::MetadataResult info = metadata(path);
+    result.status = info.status;
+    result.totalSize = info.size;
+    if (!info.ok() || info.isDirectory) {
+        if (info.ok()) result.status = AxiomFS::Status::InvalidPath;
+        return result;
+    }
+    if (offset > info.size) {
+        result.status = AxiomFS::Status::InvalidPath;
+        return result;
+    }
+    std::filesystem::path resolved;
+    result.status = resolvePath(path, resolved, false);
+    if (result.status != AxiomFS::Status::Ok) return result;
+    const std::size_t count = static_cast<std::size_t>(
+        std::min<uint64_t>(length, info.size - offset));
+    result.data.resize(count);
+    std::ifstream file(resolved, std::ios::binary);
+    if (!file || (offset != 0 && !file.seekg(static_cast<std::streamoff>(offset)))) {
+        result.status = AxiomFS::Status::IoError;
+        return result;
+    }
+    if (count != 0) file.read(reinterpret_cast<char*>(result.data.data()), static_cast<std::streamsize>(count));
+    result.status = (file.good() || file.eof()) ? AxiomFS::Status::Ok : AxiomFS::Status::IoError;
+    result.eof = offset + count == info.size;
+    return result;
+}
+
+AxiomFS::Status HostAxiomFSBackend::writeRange(const std::string& path,
+                                               uint64_t offset,
+                                               const uint8_t* data,
+                                               std::size_t size,
+                                               bool truncate) {
+    if (!m_mounted) return AxiomFS::Status::NotMounted;
+    if ((!data && size != 0) || (truncate && offset != 0)) return AxiomFS::Status::InvalidPath;
+    std::filesystem::path resolved;
+    AxiomFS::Status status = resolvePath(path, resolved, false);
+    if (status != AxiomFS::Status::Ok) return status;
+    status = ensureParentDirectories(resolved);
+    if (status != AxiomFS::Status::Ok) return status;
+    std::error_code error;
+    const bool exists = std::filesystem::exists(resolved, error);
+    if (error) return mapFilesystemError(error);
+    const uint64_t currentSize = exists ? std::filesystem::file_size(resolved, error) : 0;
+    if (error) return mapFilesystemError(error);
+    if ((!exists && offset != 0) || (!truncate && offset > currentSize)) return AxiomFS::Status::InvalidPath;
+    std::fstream file;
+    if (truncate) {
+        file.open(resolved, std::ios::binary | std::ios::out | std::ios::trunc);
+    } else if (exists) {
+        file.open(resolved, std::ios::binary | std::ios::in | std::ios::out);
+    } else {
+        file.open(resolved, std::ios::binary | std::ios::out);
+    }
+    if (!file || (offset != 0 && !file.seekp(static_cast<std::streamoff>(offset)))) return AxiomFS::Status::IoError;
+    if (size != 0) file.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+    file.flush();
+    return file.good() ? AxiomFS::Status::Ok : AxiomFS::Status::IoError;
+}
+
 AxiomFS::ReadResult HostAxiomFSBackend::readFile(const std::string& path) {
     AxiomFS::ReadResult result;
     if (!m_mounted) {

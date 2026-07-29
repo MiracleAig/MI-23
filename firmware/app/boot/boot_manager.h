@@ -12,6 +12,7 @@ struct StartupCheckResult {
     bool continueAllowed = true;
     bool repaired = false;
     const char* detail = nullptr;
+    bool storageRecoveryRequired = false;
 };
 
 class StartupBackend {
@@ -26,6 +27,10 @@ public:
     virtual StartupCheckResult checkStorage() = 0;
     virtual StartupCheckResult verifyResources(SettingsState& settings) = 0;
     virtual StartupCheckResult startRuntime(SettingsState& settings) = 0;
+    virtual StartupCheckResult formatStorage() {
+        return {false, true, false, "Storage formatting is unavailable."};
+    }
+    virtual void serviceDeferredWork(SettingsState&) {}
 };
 
 class BootManager {
@@ -51,6 +56,8 @@ private:
         AnnouncingStage,
         RunningStage,
         AwaitingContinue,
+        AwaitingFormatConfirmation,
+        AwaitingFinalFormatConfirmation,
         Finished,
     };
 

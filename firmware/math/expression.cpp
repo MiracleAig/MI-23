@@ -138,7 +138,7 @@ static float zeroTinyValue(float value) {
 }
 
 static ExprResult evalFactorial(float value) {
-    if (value < 0.0f) {
+    if (!std::isfinite(value) || value < 0.0f) {
         return {false, 0, "Factorial domain error"};
     }
 
@@ -147,6 +147,11 @@ static ExprResult evalFactorial(float value) {
         return {false, 0, "Factorial domain error"};
     }
 
+    // 34! is the largest factorial representable by a finite float. This
+    // check also keeps the subsequent integer conversion defined.
+    if (rounded > 34.0f) {
+        return {false, 0, "Factorial overflow"};
+    }
     const int n = static_cast<int>(rounded);
     float result = 1.0f;
     for (int i = 2; i <= n; ++i) {
@@ -670,6 +675,9 @@ static ExprResult evalPostfix(const Token* postfix,
             if (valTop < 2) return {false, 0, "Not enough operands"};
             float b = valStack[--valTop];
             float a = valStack[--valTop];
+            if (!std::isfinite(a) || !std::isfinite(b)) {
+                return {false, 0, "Non-finite operand"};
+            }
             float result = 0.0f;
 
             switch (token.type) {
@@ -707,6 +715,9 @@ static ExprResult evalPostfix(const Token* postfix,
                 }
                 default: break;
             }
+            if (!std::isfinite(result)) {
+                return {false, 0, "Non-finite result"};
+            }
             valStack[valTop++] = result;
         }
     }
@@ -739,6 +750,10 @@ static ExprResult evaluateInternal(const char* expr,
                                    bool hasXValue,
                                    float xValue,
                                    const ExpressionOptions& options) {
+
+    if (!expr || !std::isfinite(ansValue) || (hasXValue && !std::isfinite(xValue))) {
+        return {false, 0, "Invalid expression"};
+    }
 
     static Token infix[MAX_TOKENS];
     static Token postfix[MAX_TOKENS];

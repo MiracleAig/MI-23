@@ -65,13 +65,15 @@ class ReentrantHostAxiomFSBackend : public HostAxiomFSBackend {
 public:
     using HostAxiomFSBackend::HostAxiomFSBackend;
 
-    AxiomFS::Status writeFile(const std::string& path,
-                              const uint8_t* data,
-                              std::size_t size) override {
+    AxiomFS::Status writeRange(const std::string& path,
+                               uint64_t offset,
+                               const uint8_t* data,
+                               std::size_t size,
+                               bool truncate) override {
         if (onWrite) {
             onWrite();
         }
-        return HostAxiomFSBackend::writeFile(path, data, size);
+        return HostAxiomFSBackend::writeRange(path, offset, data, size, truncate);
     }
 
     std::function<void()> onWrite;

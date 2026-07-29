@@ -1,6 +1,7 @@
 #include "app/boot/boot_manager.h"
 
 #include "graphics/font.h"
+#include "hal/system_time.h"
 
 #include <cstdio>
 #include <cstring>
@@ -35,15 +36,6 @@ void drawCenteredText(Display& display, const char* text, int y, Color color) {
     display.drawText(text, x, y, color);
 }
 
-void drawLogo(Display& display) {
-    const int boxX = 128;
-    const int boxY = 28;
-    const int boxW = 192;
-    const int boxH = 58;
-
-
-}
-
 } // namespace
 
 BootManager::BootManager(Display& display,
@@ -74,7 +66,10 @@ void BootManager::begin() {
 }
 
 void BootManager::tick() {
-    if (m_state == State::Idle || m_state == State::AwaitingContinue || m_state == State::Finished) {
+    if (m_state == State::Idle || m_state == State::AwaitingContinue ||
+        m_state == State::AwaitingFormatConfirmation ||
+        m_state == State::AwaitingFinalFormatConfirmation ||
+        m_state == State::Finished) {
         return;
     }
 
@@ -83,30 +78,26 @@ void BootManager::tick() {
         return;
     }
 
+    std::printf("[boot][%llu ms] enter: %s\n",
+                static_cast<unsigned long long>(systemTimeMs()), stageLabel(m_stage));
     StartupCheckResult result{};
     switch (m_stage) {
         case Stage::DisplayInit:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result.ok = true;
             break;
         case Stage::InputInit:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result = m_backend.initializeInput();
             break;
         case Stage::LoadSettings:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result = m_backend.loadSettings(m_settings);
             break;
         case Stage::CheckStorage:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result = m_backend.checkStorage();
             break;
         case Stage::VerifyResources:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result = m_backend.verifyResources(m_settings);
             break;
         case Stage::StartRuntime:
-            std::printf("[boot] %s\n", stageLabel(m_stage));
             result = m_backend.startRuntime(m_settings);
             break;
         case Stage::Count:
@@ -117,6 +108,10 @@ void BootManager::tick() {
         fail(result);
         return;
     }
+
+    std::printf("[boot][%llu ms] complete: %s%s\n",
+                static_cast<unsigned long long>(systemTimeMs()), stageLabel(m_stage),
+                result.repaired ? " (repaired)" : "");
 
     if (result.repaired) {
         setDetail(result.detail);
@@ -129,6 +124,40 @@ void BootManager::tick() {
 }
 
 void BootManager::handleKey(Key key) {
+    if (m_state == State::AwaitingFormatConfirmation) {
+        if (key == Key::CLEAR) {
+            m_state = State::AwaitingContinue;
+            setDetail("Storage preserved. ENT continues without storage.");
+            m_needsRender = true;
+        } else if (key == Key::DELETE_KEY) {
+            m_state = State::AwaitingFinalFormatConfirmation;
+            setDetail("Formatting permanently erases storage.");
+            m_needsRender = true;
+        }
+        return;
+    }
+    if (m_state == State::AwaitingFinalFormatConfirmation) {
+        if (key == Key::CLEAR) {
+            m_state = State::AwaitingContinue;
+            setDetail("Format cancelled. ENT continues without storage.");
+            m_needsRender = true;
+        } else if (key == Key::DELETE_KEY) {
+            setStatus("Formatting storage...");
+            const StartupCheckResult result = m_backend.formatStorage();
+            if (result.ok) {
+                setDetail(result.detail);
+                m_completedStages++;
+                advanceStage();
+            } else {
+                m_state = State::AwaitingContinue;
+                setStatus("Storage recovery failed");
+                setDetail(result.detail);
+                appendDetail("DEL retries; ENT continues.");
+                m_needsRender = true;
+            }
+        }
+        return;
+    }
     if (m_state != State::AwaitingContinue) {
         return;
     }
@@ -137,7 +166,12 @@ void BootManager::handleKey(Key key) {
         return;
     }
 
-    if (key == Key::ENTER || key == Key::CLEAR || key == Key::HOME) {
+    if (key == Key::DELETE_KEY) {
+        m_state = State::AwaitingFormatConfirmation;
+        setStatus("Recover storage?");
+        setDetail("DEL continues to erase confirmation. CLR cancels.");
+        m_needsRender = true;
+    } else if (key == Key::ENTER || key == Key::HOME) {
         finish(false);
     }
 }
@@ -147,7 +181,9 @@ void BootManager::render() {
         return;
     }
 
-    if (m_state == State::AwaitingContinue) {
+    if (m_state == State::AwaitingContinue ||
+        m_state == State::AwaitingFormatConfirmation ||
+        m_state == State::AwaitingFinalFormatConfirmation) {
         renderError();
     } else {
         renderNormal();
@@ -262,7 +298,6 @@ const char* BootManager::stageLabel(Stage stage) const {
 
 void BootManager::renderNormal() {
     m_display.clear(COLOR_BG);
-    drawLogo(m_display);
 
     drawCenteredText(m_display, m_backend.platformName(), 112, COLOR_MUTED);
     drawCenteredText(m_display, m_backend.firmwareVersion(), 126, COLOR_MUTED);
@@ -283,19 +318,24 @@ void BootManager::renderNormal() {
         m_display.fillRect(barX + 1, barY + 1, fillW, barH - 2, COLOR_PROGRESS_FILL);
     }
 
-    char percent[8] = {};
+    char percent[16] = {};
     std::snprintf(percent, sizeof(percent), "%d%%", progressPercent());
     drawCenteredText(m_display, percent, 217, COLOR_MUTED);
 }
 
 void BootManager::renderError() {
     m_display.clear(COLOR_BG);
-    drawLogo(m_display);
     drawCenteredText(m_display, "Startup Error", 108, COLOR_ERROR);
     m_display.drawText(m_status, 24, 154, COLOR_TEXT);
     m_display.drawText(m_detail, 24, 170, COLOR_WARN);
     if (m_continueAllowed) {
-        m_display.drawText("ENT/CLR continue  HOME continue", 24, 206, COLOR_MUTED);
+        if (m_state == State::AwaitingFormatConfirmation) {
+            m_display.drawText("DEL confirm  CLR cancel", 24, 206, COLOR_MUTED);
+        } else if (m_state == State::AwaitingFinalFormatConfirmation) {
+            m_display.drawText("DEL ERASE  CLR cancel", 24, 206, COLOR_ERROR);
+        } else {
+            m_display.drawText("ENT degraded  DEL recover", 24, 206, COLOR_MUTED);
+        }
     } else {
         m_display.drawText("Power cycle required", 24, 206, COLOR_MUTED);
     }
